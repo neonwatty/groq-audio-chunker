@@ -48,20 +48,47 @@ export function drawWaveform(canvas, waveformData, options = {}) {
 }
 
 /**
- * Render chunk markers on the waveform
+ * Render chunk markers on the waveform, including overlap regions
  */
 export function renderChunkMarkers(container, chunks, duration) {
   container.innerHTML = '';
 
   chunks.forEach((chunk, index) => {
-    // Skip the first chunk's start marker (it's at 0)
+    // Render overlap regions (purple)
+    if (chunk.overlap.leading > 0 && chunk.overlap.leadingStart !== null) {
+      const startPos = (chunk.overlap.leadingStart / duration) * 100;
+      const endPos = (chunk.overlap.leadingEnd / duration) * 100;
+
+      const region = document.createElement('div');
+      region.className = 'overlap-region';
+      region.style.left = `${startPos}%`;
+      region.style.width = `${endPos - startPos}%`;
+      region.title = `Leading overlap: ${chunk.overlap.leading}s`;
+
+      container.appendChild(region);
+    }
+
+    if (chunk.overlap.trailing > 0 && chunk.overlap.trailingStart !== null) {
+      const startPos = (chunk.overlap.trailingStart / duration) * 100;
+      const endPos = (chunk.overlap.trailingEnd / duration) * 100;
+
+      const region = document.createElement('div');
+      region.className = 'overlap-region';
+      region.style.left = `${startPos}%`;
+      region.style.width = `${endPos - startPos}%`;
+      region.title = `Trailing overlap: ${chunk.overlap.trailing}s`;
+
+      container.appendChild(region);
+    }
+
+    // Render cut point marker (at logical boundary, not overlap)
     if (index > 0) {
-      const position = (chunk.start / duration) * 100;
+      const position = (chunk.logicalStart / duration) * 100;
 
       const marker = document.createElement('div');
       marker.className = 'chunk-marker';
       marker.style.left = `${position}%`;
-      marker.dataset.time = formatTime(chunk.start);
+      marker.dataset.time = formatTime(chunk.logicalStart);
 
       container.appendChild(marker);
     }
@@ -84,7 +111,7 @@ export function renderChunkMarkers(container, chunks, duration) {
 }
 
 /**
- * Render chunk list UI
+ * Render chunk list UI with overlap information
  */
 export function renderChunkList(container, chunks) {
   container.innerHTML = '';
@@ -94,8 +121,17 @@ export function renderChunkList(container, chunks) {
     item.className = 'chunk-item';
     item.dataset.chunkIndex = index;
 
-    const cutType = chunk.cutInfo.type === 'silence' ? '🔇' : '✂️';
-    const cutLabel = chunk.cutInfo.type === 'silence' ? 'silence cut' : 'exact cut';
+    // Build overlap badge
+    const hasOverlap = chunk.overlap.leading > 0 || chunk.overlap.trailing > 0;
+    const overlapBadge = hasOverlap
+      ? `<span class="overlap-badge" title="Leading: ${chunk.overlap.leading}s, Trailing: ${chunk.overlap.trailing}s">🔀 overlap</span>`
+      : '';
+
+    // Show logical time range for clarity
+    const logicalTime = `${formatTime(chunk.logicalStart)} → ${formatTime(chunk.logicalEnd)}`;
+    const actualTime = hasOverlap
+      ? `<small class="actual-time">(actual: ${formatTime(chunk.start)} → ${formatTime(chunk.end)})</small>`
+      : '';
 
     item.innerHTML = `
       <div class="chunk-item-header">
@@ -103,10 +139,11 @@ export function renderChunkList(container, chunks) {
         <span class="chunk-status pending">Pending</span>
       </div>
       <div class="chunk-time">
-        ${formatTime(chunk.start)} → ${formatTime(chunk.end)}
+        ${logicalTime}
+        ${actualTime}
       </div>
       <div class="chunk-duration">
-        ${formatDuration(chunk.duration)} ${cutType} <small>${cutLabel}</small>
+        ${formatDuration(chunk.duration)} ${overlapBadge}
       </div>
     `;
 

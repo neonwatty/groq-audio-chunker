@@ -40,6 +40,12 @@
           <input type="range" id="silenceThreshold" min="0.001" max="0.1" value="0.01" step="0.001">
           <small>Lower = stricter silence detection (0.01 = 1% of max amplitude)</small>
         </div>
+
+        <div class="config-item">
+          <label for="overlapDuration">Overlap Duration: <span id="overlapDurationValue">10</span> seconds</label>
+          <input type="range" id="overlapDuration" min="0" max="30" value="10" step="1">
+          <small>Overlap between chunks for robust deduplication (0 = disabled)</small>
+        </div>
       </div>
     </section>
 
@@ -101,6 +107,17 @@
       <div class="results-actions">
         <button id="copyBtn" class="btn-secondary">📋 Copy Text</button>
         <button id="downloadBtn" class="btn-secondary">💾 Download</button>
+      </div>
+
+      <div class="merge-stats" id="mergeStats" hidden>
+        <div class="merge-stat">
+          <span class="merge-stat-label">Overlap Regions Merged</span>
+          <span class="merge-stat-value" id="overlapsMerged">0</span>
+        </div>
+        <div class="merge-stat">
+          <span class="merge-stat-label">Words Deduplicated</span>
+          <span class="merge-stat-value" id="wordsDeduplicated">0</span>
+        </div>
       </div>
 
       <div class="transcript-container">

@@ -294,6 +294,15 @@ button {
   background: var(--silence-color);
 }
 
+.overlap-region {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: rgba(139, 92, 246, 0.3);
+  border-left: 1px dashed rgba(139, 92, 246, 0.6);
+  border-right: 1px dashed rgba(139, 92, 246, 0.6);
+}
+
 /* Chunk List */
 .chunk-list {
   display: grid;
@@ -348,6 +357,21 @@ button {
 .chunk-time {
   color: var(--text-muted);
   font-size: 0.8rem;
+}
+
+.chunk-time .actual-time {
+  display: block;
+  font-size: 0.7rem;
+  color: rgba(139, 92, 246, 0.8);
+}
+
+.overlap-badge {
+  font-size: 0.7rem;
+  background: rgba(139, 92, 246, 0.2);
+  color: rgb(167, 139, 250);
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-left: 0.5rem;
 }
 
 /* Progress */
@@ -429,6 +453,33 @@ button {
   display: flex;
   gap: 0.75rem;
   margin-bottom: 1rem;
+}
+
+.merge-stats {
+  display: flex;
+  gap: 1.5rem;
+  margin-bottom: 1rem;
+  padding: 0.75rem 1rem;
+  background: rgba(34, 197, 94, 0.1);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  border-radius: 8px;
+}
+
+.merge-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.merge-stat-label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.merge-stat-value {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--success);
 }
 
 .transcript-container {

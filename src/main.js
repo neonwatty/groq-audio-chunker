@@ -10,7 +10,8 @@ import {
   formatSize
 } from './audio-analyzer.js';
 import { calculateChunks, extractChunkBlob, validateChunkSize } from './chunker.js';
-import { transcribeChunks, mergeTranscripts, validateApiKey } from './groq-client.js';
+import { transcribeChunks, validateApiKey } from './groq-client.js';
+import { mergeTranscriptsWithDeduplication } from './deduplication.js';
 import {
   drawWaveform,
   renderChunkMarkers,
@@ -24,6 +25,7 @@ import {
 let currentFile = null;
 let currentChunks = null;
 let transcriptionResults = null;
+let mergeStats = null;
 let startTime = null;
 let timerInterval = null;
 
@@ -37,6 +39,8 @@ const elements = {
   silenceWindowValue: document.getElementById('silenceWindowValue'),
   silenceThreshold: document.getElementById('silenceThreshold'),
   silenceThresholdValue: document.getElementById('silenceThresholdValue'),
+  overlapDuration: document.getElementById('overlapDuration'),
+  overlapDurationValue: document.getElementById('overlapDurationValue'),
 
   // Upload
   uploadArea: document.getElementById('uploadArea'),
@@ -65,6 +69,9 @@ const elements = {
 
   // Results
   resultsSection: document.getElementById('resultsSection'),
+  mergeStats: document.getElementById('mergeStats'),
+  overlapsMerged: document.getElementById('overlapsMerged'),
+  wordsDeduplicated: document.getElementById('wordsDeduplicated'),
   copyBtn: document.getElementById('copyBtn'),
   downloadBtn: document.getElementById('downloadBtn'),
   transcriptText: document.getElementById('transcriptText'),
@@ -76,7 +83,7 @@ const elements = {
 
 // Initialize
 function init() {
-  log('Groq Audio Chunker initialized');
+  log('Groq Audio Chunker initialized (with overlap + deduplication)');
   setupEventListeners();
   loadSavedSettings();
 }
@@ -95,6 +102,11 @@ function setupEventListeners() {
 
   elements.silenceThreshold.addEventListener('input', (e) => {
     elements.silenceThresholdValue.textContent = e.target.value;
+    saveSettings();
+  });
+
+  elements.overlapDuration.addEventListener('input', (e) => {
+    elements.overlapDurationValue.textContent = e.target.value;
     saveSettings();
   });
 
@@ -161,6 +173,10 @@ function loadSavedSettings() {
         elements.silenceThreshold.value = settings.silenceThreshold;
         elements.silenceThresholdValue.textContent = settings.silenceThreshold;
       }
+      if (settings.overlapDuration !== undefined) {
+        elements.overlapDuration.value = settings.overlapDuration;
+        elements.overlapDurationValue.textContent = settings.overlapDuration;
+      }
     } catch (e) {
       // Ignore invalid saved settings
     }
@@ -171,7 +187,8 @@ function saveSettings() {
   const settings = {
     chunkLength: elements.chunkLength.value,
     silenceWindow: elements.silenceWindow.value,
-    silenceThreshold: elements.silenceThreshold.value
+    silenceThreshold: elements.silenceThreshold.value,
+    overlapDuration: elements.overlapDuration.value
   };
   localStorage.setItem('groqChunkerSettings', JSON.stringify(settings));
 }
@@ -185,6 +202,7 @@ async function handleFileSelect(file) {
   currentFile = file;
   currentChunks = null;
   transcriptionResults = null;
+  mergeStats = null;
 
   log(`File selected: ${file.name} (${formatSize(file.size)})`);
 
@@ -226,6 +244,7 @@ function handleFileRemove() {
   currentFile = null;
   currentChunks = null;
   transcriptionResults = null;
+  mergeStats = null;
 
   elements.fileInfo.hidden = true;
   elements.uploadArea.hidden = false;
@@ -247,13 +266,15 @@ async function handleAnalyze() {
     const chunkLengthMinutes = parseInt(elements.chunkLength.value);
     const silenceWindowSec = parseInt(elements.silenceWindow.value);
     const silenceThreshold = parseFloat(elements.silenceThreshold.value);
+    const overlapDurationSec = parseInt(elements.overlapDuration.value);
 
-    log(`Starting chunk analysis (${chunkLengthMinutes}min chunks, ${silenceWindowSec}s window)...`);
+    log(`Starting chunk analysis (${chunkLengthMinutes}min chunks, ${overlapDurationSec}s overlap, ${silenceWindowSec}s window)...`);
 
     currentChunks = await calculateChunks(currentFile, {
       chunkLengthMinutes,
       silenceWindowSec,
       silenceThreshold,
+      overlapDurationSec,
       onProgress: (pct) => {
         elements.analyzeBtn.textContent = `⏳ Analyzing... ${Math.round(pct)}%`;
       }
@@ -269,10 +290,12 @@ async function handleAnalyze() {
 
     log(`Analysis complete: ${currentChunks.length} chunks`, 'success');
 
-    // Log chunk summary
+    // Log chunk summary with overlap info
     currentChunks.forEach((chunk, i) => {
-      const cutType = chunk.cutInfo.type === 'silence' ? '🔇' : '✂️';
-      log(`  Chunk ${i + 1}: ${formatTime(chunk.start)} → ${formatTime(chunk.end)} ${cutType}`);
+      const overlapInfo = chunk.overlap.leading > 0 || chunk.overlap.trailing > 0
+        ? ` [overlap: ${chunk.overlap.leading}s/${chunk.overlap.trailing}s]`
+        : '';
+      log(`  Chunk ${i + 1}: ${formatTime(chunk.logicalStart)} → ${formatTime(chunk.logicalEnd)}${overlapInfo}`);
     });
 
   } catch (error) {
@@ -308,7 +331,8 @@ async function handleTranscribe() {
   startTime = Date.now();
   timerInterval = setInterval(updateTimer, 1000);
 
-  log(`Starting transcription of ${currentChunks.length} chunks...`);
+  const overlapDurationSec = parseInt(elements.overlapDuration.value);
+  log(`Starting transcription of ${currentChunks.length} chunks (overlap: ${overlapDurationSec}s)...`);
 
   try {
     transcriptionResults = await transcribeChunks(
@@ -335,9 +359,9 @@ async function handleTranscribe() {
       }
     );
 
-    // Show results
+    // Show results with deduplication
     clearInterval(timerInterval);
-    showResults();
+    showResults(overlapDurationSec);
 
     const successCount = transcriptionResults.filter(r => r.success).length;
     log(`Transcription complete: ${successCount}/${currentChunks.length} chunks successful`, 'success');
@@ -363,12 +387,25 @@ function updateTimer() {
   elements.elapsedTime.textContent = `Elapsed: ${minutes}:${seconds.toString().padStart(2, '0')}`;
 }
 
-function showResults() {
+function showResults(overlapDurationSec) {
   elements.resultsSection.hidden = false;
 
-  // Merge all transcripts
-  const fullText = mergeTranscripts(transcriptionResults);
-  elements.transcriptText.textContent = fullText || '(No transcription results)';
+  // Merge transcripts with deduplication
+  log('Merging transcripts with deduplication...');
+  const mergeResult = mergeTranscriptsWithDeduplication(transcriptionResults, overlapDurationSec);
+  mergeStats = mergeResult.stats;
+
+  elements.transcriptText.textContent = mergeResult.text || '(No transcription results)';
+
+  // Show merge stats if overlap was used
+  if (overlapDurationSec > 0) {
+    elements.mergeStats.hidden = false;
+    elements.overlapsMerged.textContent = mergeStats.overlapsMerged;
+    elements.wordsDeduplicated.textContent = mergeStats.wordsDeduplicated;
+    log(`Deduplication: ${mergeStats.overlapsMerged} overlaps merged, ${mergeStats.wordsDeduplicated} words deduplicated`, 'success');
+  } else {
+    elements.mergeStats.hidden = true;
+  }
 
   // Show individual chunk transcripts
   elements.chunkTranscripts.innerHTML = '';
@@ -378,10 +415,16 @@ function showResults() {
     div.className = 'chunk-transcript';
 
     if (result.success) {
+      const chunk = result.chunk;
+      const hasOverlap = chunk.overlap.leading > 0 || chunk.overlap.trailing > 0;
+      const overlapBadge = hasOverlap
+        ? `<span class="overlap-badge">🔀 ${chunk.overlap.leading}s/${chunk.overlap.trailing}s overlap</span>`
+        : '';
+
       div.innerHTML = `
         <div class="chunk-transcript-header">
-          <span>Chunk ${index + 1}</span>
-          <span>${formatTime(result.chunk.start)} → ${formatTime(result.chunk.end)}</span>
+          <span>Chunk ${index + 1} ${overlapBadge}</span>
+          <span>${formatTime(chunk.logicalStart)} → ${formatTime(chunk.logicalEnd)}</span>
         </div>
         <div class="chunk-transcript-text">${escapeHtml(result.text)}</div>
       `;
