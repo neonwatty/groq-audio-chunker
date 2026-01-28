@@ -125,6 +125,42 @@
       </div>
 
       <div class="chunk-transcripts" id="chunkTranscripts"></div>
+
+      <div class="debug-section">
+        <h3>
+          <label>
+            <input type="checkbox" id="showWordTimestamps">
+            Show Word Timestamps (Debug View)
+          </label>
+        </h3>
+
+        <div class="word-timeline" id="wordTimeline" hidden>
+          <div class="timeline-controls">
+            <label>
+              Jump to time:
+              <input type="text" id="jumpToTime" placeholder="e.g., 10:00" class="time-input">
+            </label>
+            <label>
+              Filter:
+              <select id="wordFilter">
+                <option value="all">All Words</option>
+                <option value="overlap">Overlap Regions Only</option>
+                <option value="deduplicated">Deduplicated Words</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="timeline-legend">
+            <span class="legend-item"><span class="legend-color chunk-0"></span> Chunk 1</span>
+            <span class="legend-item"><span class="legend-color chunk-1"></span> Chunk 2</span>
+            <span class="legend-item"><span class="legend-color chunk-2"></span> Chunk 3+</span>
+            <span class="legend-item"><span class="legend-color overlap"></span> Overlap Region</span>
+            <span class="legend-item"><span class="legend-color deduped"></span> Deduplicated</span>
+          </div>
+
+          <div class="word-list" id="wordList"></div>
+        </div>
+      </div>
     </section>
 
     <section class="logs-section">

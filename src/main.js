@@ -26,6 +26,8 @@ let currentFile = null;
 let currentChunks = null;
 let transcriptionResults = null;
 let mergeStats = null;
+let mergedWords = null; // Word-level data with timestamps for debug view
+let allWordsRaw = null; // All words before deduplication
 let startTime = null;
 let timerInterval = null;
 
@@ -76,6 +78,13 @@ const elements = {
   downloadBtn: document.getElementById('downloadBtn'),
   transcriptText: document.getElementById('transcriptText'),
   chunkTranscripts: document.getElementById('chunkTranscripts'),
+
+  // Debug View
+  showWordTimestamps: document.getElementById('showWordTimestamps'),
+  wordTimeline: document.getElementById('wordTimeline'),
+  jumpToTime: document.getElementById('jumpToTime'),
+  wordFilter: document.getElementById('wordFilter'),
+  wordList: document.getElementById('wordList'),
 
   // Logs
   clearLogs: document.getElementById('clearLogs')
@@ -151,6 +160,24 @@ function setupEventListeners() {
   // Results
   elements.copyBtn.addEventListener('click', handleCopyText);
   elements.downloadBtn.addEventListener('click', handleDownload);
+
+  // Debug View
+  elements.showWordTimestamps.addEventListener('change', (e) => {
+    elements.wordTimeline.hidden = !e.target.checked;
+    if (e.target.checked && allWordsRaw) {
+      renderWordTimeline();
+    }
+  });
+
+  elements.wordFilter.addEventListener('change', () => {
+    if (allWordsRaw) renderWordTimeline();
+  });
+
+  elements.jumpToTime.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+      jumpToTimeInWordList();
+    }
+  });
 
   // Logs
   elements.clearLogs.addEventListener('click', clearLogs);
@@ -394,8 +421,14 @@ function showResults(overlapDurationSec) {
   log('Merging transcripts with deduplication...');
   const mergeResult = mergeTranscriptsWithDeduplication(transcriptionResults, overlapDurationSec);
   mergeStats = mergeResult.stats;
+  mergedWords = mergeResult.words;
+  allWordsRaw = mergeResult.allWords || [];
 
   elements.transcriptText.textContent = mergeResult.text || '(No transcription results)';
+
+  // Reset debug view
+  elements.showWordTimestamps.checked = false;
+  elements.wordTimeline.hidden = true;
 
   // Show merge stats if overlap was used
   if (overlapDurationSec > 0) {
@@ -477,6 +510,118 @@ function escapeHtml(text) {
   const div = document.createElement('div');
   div.textContent = text;
   return div.innerHTML;
+}
+
+/**
+ * Render the word timeline debug view
+ */
+function renderWordTimeline() {
+  if (!allWordsRaw || allWordsRaw.length === 0) {
+    elements.wordList.innerHTML = '<p class="no-words">No word timestamp data available</p>';
+    return;
+  }
+
+  const filter = elements.wordFilter.value;
+  let wordsToShow = allWordsRaw;
+
+  // Apply filter
+  if (filter === 'overlap') {
+    wordsToShow = allWordsRaw.filter(w => w.inOverlap);
+  } else if (filter === 'deduplicated') {
+    wordsToShow = allWordsRaw.filter(w => w.deduplicated);
+  }
+
+  if (wordsToShow.length === 0) {
+    elements.wordList.innerHTML = `<p class="no-words">No words match the filter "${filter}"</p>`;
+    return;
+  }
+
+  // Group words by time (for easier visualization)
+  const html = wordsToShow.map((w, idx) => {
+    const classes = ['word-item'];
+
+    // Chunk color class (cycle through 3 colors)
+    classes.push(`chunk-${w.chunkIndex % 3}`);
+
+    // Overlap and deduplication status
+    if (w.inOverlap) classes.push('in-overlap');
+    if (w.deduplicated) classes.push('deduplicated');
+
+    const startTime = formatTimeMs(w.absoluteStart);
+    const endTime = formatTimeMs(w.absoluteEnd);
+    const centralityPct = Math.round(w.centrality * 100);
+
+    return `
+      <div class="${classes.join(' ')}" data-time="${w.absoluteStart}">
+        <span class="word-text">${escapeHtml(w.word)}</span>
+        <span class="word-time">${startTime} - ${endTime}</span>
+        <span class="word-chunk">Chunk ${w.chunkIndex + 1}</span>
+        <span class="word-centrality" title="Distance from chunk boundary">📍 ${centralityPct}%</span>
+        ${w.deduplicated ? '<span class="word-status">✗ Removed</span>' : '<span class="word-status kept">✓ Kept</span>'}
+      </div>
+    `;
+  }).join('');
+
+  elements.wordList.innerHTML = html;
+  log(`Word timeline: showing ${wordsToShow.length} of ${allWordsRaw.length} words`, 'info');
+}
+
+/**
+ * Jump to a specific time in the word list
+ */
+function jumpToTimeInWordList() {
+  const input = elements.jumpToTime.value.trim();
+  if (!input) return;
+
+  // Parse time input (supports "10:30", "10:30.5", "630" seconds)
+  let targetTime;
+  if (input.includes(':')) {
+    const parts = input.split(':');
+    const minutes = parseInt(parts[0]) || 0;
+    const seconds = parseFloat(parts[1]) || 0;
+    targetTime = minutes * 60 + seconds;
+  } else {
+    targetTime = parseFloat(input);
+  }
+
+  if (isNaN(targetTime)) {
+    log(`Invalid time format: "${input}"`, 'warning');
+    return;
+  }
+
+  // Find the first word at or after this time
+  const wordElements = elements.wordList.querySelectorAll('.word-item');
+  let foundElement = null;
+
+  for (const el of wordElements) {
+    const wordTime = parseFloat(el.dataset.time);
+    if (wordTime >= targetTime) {
+      foundElement = el;
+      break;
+    }
+  }
+
+  if (foundElement) {
+    // Scroll to the element
+    foundElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+    // Highlight briefly
+    foundElement.classList.add('highlight');
+    setTimeout(() => foundElement.classList.remove('highlight'), 2000);
+
+    log(`Jumped to ${formatTimeMs(targetTime)}`, 'success');
+  } else {
+    log(`No words found at or after ${formatTimeMs(targetTime)}`, 'warning');
+  }
+}
+
+/**
+ * Format time with milliseconds (e.g., "1:23.456")
+ */
+function formatTimeMs(seconds) {
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins}:${secs.toFixed(2).padStart(5, '0')}`;
 }
 
 // Start the app

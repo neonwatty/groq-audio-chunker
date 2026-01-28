@@ -158,9 +158,20 @@ function deduplicateByTimestamp(words, overlapDurationSec) {
 
   log(`Timestamp deduplication: ${wordsDeduplicated} duplicate words removed`, 'success');
 
+  // Mark which words in the original list were deduplicated (for debug view)
+  const finalWordSet = new Set(finalWords.map(w => `${w.absoluteStart.toFixed(3)}-${w.chunkIndex}`));
+  const allWordsWithStatus = words.map(w => ({
+    ...w,
+    deduplicated: !finalWordSet.has(`${w.absoluteStart.toFixed(3)}-${w.chunkIndex}`),
+    inOverlap: overlapRegionsProcessed.has(`${Math.min(w.chunkIndex, w.chunkIndex + 1)}-${Math.max(w.chunkIndex, w.chunkIndex + 1)}`) ||
+               overlapRegionsProcessed.has(`${w.chunkIndex - 1}-${w.chunkIndex}`) ||
+               overlapRegionsProcessed.has(`${w.chunkIndex}-${w.chunkIndex + 1}`)
+  }));
+
   return {
     text,
     words: finalWords,
+    allWords: allWordsWithStatus, // All words including deduplicated ones for debug
     stats: {
       overlapsMerged: overlapRegionsProcessed.size,
       wordsDeduplicated
