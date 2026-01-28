@@ -23,6 +23,9 @@ export async function transcribeChunk(audioBlob, apiKey, options = {}) {
   formData.append('model', model);
   formData.append('response_format', responseFormat);
 
+  // Request word-level timestamps for precise deduplication
+  formData.append('timestamp_granularities[]', 'word');
+
   if (language) {
     formData.append('language', language);
   }

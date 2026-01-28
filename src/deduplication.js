@@ -1,39 +1,185 @@
 /**
- * Transcript deduplication using Longest Common Subsequence (LCS)
+ * Transcript deduplication using word-level timestamps
  *
- * When chunks overlap, both transcripts will contain the same words in the
- * overlap region. This module finds and removes the duplicated content.
+ * When chunks overlap, both will have words with similar absolute timestamps.
+ * We deduplicate by timestamp, keeping the word from whichever chunk has it
+ * further from the boundary (more context = better accuracy).
  */
 
 import { log } from './logger.js';
 
 /**
- * Merge transcripts from overlapping chunks using LCS-based deduplication
+ * Merge transcripts from overlapping chunks using timestamp-based deduplication
  *
- * @param {Array} results - Array of transcription results with text
+ * @param {Array} results - Array of transcription results with words[] containing timestamps
  * @param {number} overlapDurationSec - Expected overlap duration in seconds
- * @returns {Object} - { text: string, stats: { overlapsMerged, wordsDeduplicated } }
+ * @returns {Object} - { text: string, words: array, stats: { overlapsMerged, wordsDeduplicated } }
  */
 export function mergeTranscriptsWithDeduplication(results, overlapDurationSec = 10) {
   const successfulResults = results.filter(r => r.success && r.text);
 
   if (successfulResults.length === 0) {
-    return { text: '', stats: { overlapsMerged: 0, wordsDeduplicated: 0 } };
+    return { text: '', words: [], stats: { overlapsMerged: 0, wordsDeduplicated: 0 } };
   }
 
-  if (successfulResults.length === 1) {
-    return {
-      text: successfulResults[0].text.trim(),
-      stats: { overlapsMerged: 0, wordsDeduplicated: 0 }
-    };
+  // Convert all words to absolute timestamps
+  const allWordsWithAbsoluteTime = [];
+
+  for (const result of successfulResults) {
+    const chunk = result.chunk;
+    const chunkStart = chunk.start; // Absolute start time in the original audio
+    const chunkLogicalStart = chunk.logicalStart;
+    const chunkLogicalEnd = chunk.logicalEnd;
+
+    // Check if we have word-level timestamps
+    if (result.words && result.words.length > 0) {
+      for (const word of result.words) {
+        // Convert relative timestamp to absolute
+        const absoluteStart = chunkStart + word.start;
+        const absoluteEnd = chunkStart + word.end;
+
+        // Calculate how "central" this word is in the chunk (0 = at boundary, 1 = center)
+        // Words further from boundaries are likely more accurate
+        const distanceFromStart = absoluteStart - chunkLogicalStart;
+        const distanceFromEnd = chunkLogicalEnd - absoluteEnd;
+        const minDistanceFromBoundary = Math.min(distanceFromStart, distanceFromEnd);
+        const chunkDuration = chunkLogicalEnd - chunkLogicalStart;
+        const centrality = minDistanceFromBoundary / (chunkDuration / 2); // 0 to 1
+
+        allWordsWithAbsoluteTime.push({
+          word: word.word,
+          absoluteStart,
+          absoluteEnd,
+          centrality,
+          chunkIndex: result.chunk.index,
+          original: word
+        });
+      }
+    } else {
+      // Fallback: no word timestamps, can't do timestamp-based dedup
+      log(`Chunk ${chunk.index + 1}: No word timestamps available, falling back to text merge`, 'warning');
+    }
   }
 
-  let mergedText = successfulResults[0].text.trim();
+  // If we have words with timestamps, do timestamp-based deduplication
+  if (allWordsWithAbsoluteTime.length > 0) {
+    return deduplicateByTimestamp(allWordsWithAbsoluteTime, overlapDurationSec);
+  }
+
+  // Fallback to simple text concatenation if no word timestamps
+  return fallbackTextMerge(successfulResults, overlapDurationSec);
+}
+
+/**
+ * Deduplicate words by their absolute timestamps
+ *
+ * Algorithm:
+ * 1. Sort all words by absolute start time
+ * 2. For words with similar timestamps (within tolerance), keep the one with higher centrality
+ * 3. Reconstruct the text from the deduplicated word list
+ */
+function deduplicateByTimestamp(words, overlapDurationSec) {
+  // Sort by absolute start time
+  words.sort((a, b) => a.absoluteStart - b.absoluteStart);
+
+  const TIMESTAMP_TOLERANCE = 0.3; // 300ms tolerance for "same" word
+  const deduplicated = [];
+  let wordsDeduplicated = 0;
+  let overlapRegionsProcessed = new Set();
+
+  for (let i = 0; i < words.length; i++) {
+    const current = words[i];
+
+    // Look ahead for duplicates (words from different chunks at similar timestamps)
+    let dominated = false;
+
+    for (let j = i + 1; j < words.length; j++) {
+      const next = words[j];
+
+      // If we're past the tolerance window, stop looking
+      if (next.absoluteStart - current.absoluteStart > TIMESTAMP_TOLERANCE) {
+        break;
+      }
+
+      // Check if this is the same word from a different chunk
+      if (next.chunkIndex !== current.chunkIndex) {
+        // Same timestamp region, different chunks = overlap
+        overlapRegionsProcessed.add(`${current.chunkIndex}-${next.chunkIndex}`);
+
+        // Compare the words (might be transcribed slightly differently)
+        const sameWord = normalizeWord(current.word) === normalizeWord(next.word);
+        const similarTiming = Math.abs(next.absoluteStart - current.absoluteStart) < TIMESTAMP_TOLERANCE;
+
+        if (similarTiming) {
+          // Keep the one with higher centrality (further from chunk boundary)
+          if (next.centrality > current.centrality) {
+            dominated = true;
+            wordsDeduplicated++;
+            break;
+          }
+        }
+      }
+    }
+
+    if (!dominated) {
+      deduplicated.push(current);
+    }
+  }
+
+  // Also check backwards for any we missed (words where a later one dominates an earlier one)
+  // This handles cases where the second chunk's word should replace the first chunk's word
+  const finalWords = [];
+  const seen = new Set();
+
+  for (const word of deduplicated) {
+    // Create a key for this timestamp region
+    const timeKey = Math.round(word.absoluteStart * 3); // ~333ms buckets
+
+    // Check if we've already seen a word in this time bucket
+    if (seen.has(timeKey)) {
+      // Find the existing word
+      const existing = finalWords.find(w => Math.round(w.absoluteStart * 3) === timeKey);
+      if (existing && word.centrality > existing.centrality) {
+        // Replace with higher centrality word
+        const idx = finalWords.indexOf(existing);
+        finalWords[idx] = word;
+        wordsDeduplicated++;
+      } else {
+        wordsDeduplicated++;
+      }
+    } else {
+      seen.add(timeKey);
+      finalWords.push(word);
+    }
+  }
+
+  // Reconstruct text from deduplicated words
+  const text = finalWords.map(w => w.word).join(' ');
+
+  log(`Timestamp deduplication: ${wordsDeduplicated} duplicate words removed`, 'success');
+
+  return {
+    text,
+    words: finalWords,
+    stats: {
+      overlapsMerged: overlapRegionsProcessed.size,
+      wordsDeduplicated
+    }
+  };
+}
+
+/**
+ * Fallback: text-based merge when word timestamps aren't available
+ */
+function fallbackTextMerge(results, overlapDurationSec) {
+  log('Using fallback text-based merge (no word timestamps)', 'warning');
+
+  let mergedText = results[0].text.trim();
   let totalWordsDeduplicated = 0;
   let overlapsMerged = 0;
 
-  for (let i = 1; i < successfulResults.length; i++) {
-    const currentText = successfulResults[i].text.trim();
+  for (let i = 1; i < results.length; i++) {
+    const currentText = results[i].text.trim();
 
     if (overlapDurationSec > 0) {
       const mergeResult = mergeOverlappingTexts(mergedText, currentText);
@@ -42,16 +188,17 @@ export function mergeTranscriptsWithDeduplication(results, overlapDurationSec = 
 
       if (mergeResult.wordsDeduplicated > 0) {
         overlapsMerged++;
-        log(`Merged chunk ${i + 1}: deduplicated ${mergeResult.wordsDeduplicated} words`, 'success');
+      } else {
+        log(`Chunk ${i + 1}: Text-based dedup failed, possible duplicate content`, 'warning');
       }
     } else {
-      // No overlap, just concatenate
       mergedText = mergedText + ' ' + currentText;
     }
   }
 
   return {
     text: mergedText,
+    words: [],
     stats: {
       overlapsMerged,
       wordsDeduplicated: totalWordsDeduplicated
@@ -60,55 +207,39 @@ export function mergeTranscriptsWithDeduplication(results, overlapDurationSec = 
 }
 
 /**
- * Merge two overlapping texts by finding the longest common subsequence
- * at the boundary and removing the duplicate.
- *
- * @param {string} text1 - First text (earlier chunk)
- * @param {string} text2 - Second text (later chunk, starts with overlap)
- * @returns {Object} - { merged: string, wordsDeduplicated: number }
+ * Text-based overlap merge (fallback when timestamps unavailable)
  */
 function mergeOverlappingTexts(text1, text2) {
   const words1 = tokenize(text1);
   const words2 = tokenize(text2);
 
-  // Look for overlap in the last portion of text1 and first portion of text2
-  // We expect the overlap to be at most ~20% of either text
   const searchWindow1 = Math.min(words1.length, Math.ceil(words1.length * 0.3));
   const searchWindow2 = Math.min(words2.length, Math.ceil(words2.length * 0.3));
 
   const tail1 = words1.slice(-searchWindow1);
   const head2 = words2.slice(0, searchWindow2);
 
-  // Find the best overlap match
   const overlap = findBestOverlap(tail1, head2);
 
-  if (overlap.length >= 3) { // Require at least 3 words to consider it a valid overlap
-    // Remove the overlapping portion from text2
+  if (overlap.length >= 2) { // Lowered threshold since this is fallback
     const text2WithoutOverlap = words2.slice(overlap.endIndex2).join(' ');
-
     return {
       merged: text1 + ' ' + text2WithoutOverlap,
       wordsDeduplicated: overlap.length
     };
   }
 
-  // No significant overlap found, just concatenate
   return {
     merged: text1 + ' ' + text2,
     wordsDeduplicated: 0
   };
 }
 
-/**
- * Find the best overlapping sequence between the tail of arr1 and head of arr2
- */
 function findBestOverlap(tail1, head2) {
   let bestOverlap = { length: 0, startIndex1: 0, endIndex2: 0 };
 
-  // Try different starting positions in tail1
   for (let i = 0; i < tail1.length; i++) {
     const matchResult = findMatchFromPosition(tail1, head2, i);
-
     if (matchResult.length > bestOverlap.length) {
       bestOverlap = {
         length: matchResult.length,
@@ -121,14 +252,8 @@ function findBestOverlap(tail1, head2) {
   return bestOverlap;
 }
 
-/**
- * Find how many consecutive words match starting from position in tail1
- */
 function findMatchFromPosition(tail1, head2, startIndex1) {
   let matchLength = 0;
-  let j = 0;
-
-  // Find where in head2 the match starts
   const firstWord = normalizeWord(tail1[startIndex1]);
   let startIndex2 = -1;
 
@@ -143,7 +268,6 @@ function findMatchFromPosition(tail1, head2, startIndex1) {
     return { length: 0, endIndex2: 0 };
   }
 
-  // Count consecutive matches
   let i1 = startIndex1;
   let i2 = startIndex2;
 
@@ -153,76 +277,17 @@ function findMatchFromPosition(tail1, head2, startIndex1) {
       i1++;
       i2++;
     } else {
-      // Allow small gaps (1 word difference) for robustness
-      if (i1 + 1 < tail1.length && normalizeWord(tail1[i1 + 1]) === normalizeWord(head2[i2])) {
-        i1++;
-      } else if (i2 + 1 < head2.length && normalizeWord(tail1[i1]) === normalizeWord(head2[i2 + 1])) {
-        i2++;
-      } else {
-        break;
-      }
+      break;
     }
   }
 
   return { length: matchLength, endIndex2: i2 };
 }
 
-/**
- * Tokenize text into words
- */
 function tokenize(text) {
-  return text
-    .split(/\s+/)
-    .filter(word => word.length > 0);
+  return text.split(/\s+/).filter(word => word.length > 0);
 }
 
-/**
- * Normalize a word for comparison (lowercase, remove punctuation)
- */
 function normalizeWord(word) {
-  return word
-    .toLowerCase()
-    .replace(/[.,!?;:'"()\[\]{}]/g, '');
-}
-
-/**
- * Alternative: Simple suffix-prefix matching
- * Faster but less robust than LCS
- */
-export function simpleMerge(text1, text2, minOverlapWords = 5) {
-  const words1 = tokenize(text1);
-  const words2 = tokenize(text2);
-
-  // Try to find where text2 overlaps with the end of text1
-  for (let overlapLen = Math.min(50, words2.length); overlapLen >= minOverlapWords; overlapLen--) {
-    const suffix1 = words1.slice(-overlapLen).map(normalizeWord).join(' ');
-    const prefix2 = words2.slice(0, overlapLen).map(normalizeWord).join(' ');
-
-    // Check for fuzzy match (allow 80% similarity)
-    if (similarity(suffix1, prefix2) > 0.8) {
-      const merged = words1.concat(words2.slice(overlapLen)).join(' ');
-      return {
-        merged,
-        wordsDeduplicated: overlapLen
-      };
-    }
-  }
-
-  return {
-    merged: text1 + ' ' + text2,
-    wordsDeduplicated: 0
-  };
-}
-
-/**
- * Calculate similarity between two strings (Jaccard-like)
- */
-function similarity(str1, str2) {
-  const set1 = new Set(str1.split(' '));
-  const set2 = new Set(str2.split(' '));
-
-  const intersection = new Set([...set1].filter(x => set2.has(x)));
-  const union = new Set([...set1, ...set2]);
-
-  return intersection.size / union.size;
+  return word.toLowerCase().replace(/[.,!?;:'"()\[\]{}]/g, '');
 }
