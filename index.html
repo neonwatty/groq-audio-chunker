@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Groq Audio Chunker</title>
+  <link rel="stylesheet" href="/src/styles.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>🎙️ Groq Audio Chunker</h1>
+      <p class="subtitle">Browser-based audio chunking with smart silence detection</p>
+    </header>
+
+    <section class="config-section">
+      <h2>Configuration</h2>
+
+      <div class="config-grid">
+        <div class="config-item">
+          <label for="apiKey">Groq API Key</label>
+          <input type="password" id="apiKey" placeholder="gsk_..." autocomplete="off">
+          <small>Your key is never stored or sent anywhere except Groq</small>
+        </div>
+
+        <div class="config-item">
+          <label for="chunkLength">Chunk Length: <span id="chunkLengthValue">10</span> minutes</label>
+          <input type="range" id="chunkLength" min="1" max="30" value="10" step="1">
+          <small>Longer chunks = fewer cuts, but may hit API limits</small>
+        </div>
+
+        <div class="config-item">
+          <label for="silenceWindow">Silence Search Window: <span id="silenceWindowValue">30</span> seconds</label>
+          <input type="range" id="silenceWindow" min="5" max="60" value="30" step="5">
+          <small>How far to look for silence around cut points</small>
+        </div>
+
+        <div class="config-item">
+          <label for="silenceThreshold">Silence Threshold: <span id="silenceThresholdValue">0.01</span></label>
+          <input type="range" id="silenceThreshold" min="0.001" max="0.1" value="0.01" step="0.001">
+          <small>Lower = stricter silence detection (0.01 = 1% of max amplitude)</small>
+        </div>
+      </div>
+    </section>
+
+    <section class="upload-section">
+      <h2>Upload Audio</h2>
+      <div class="upload-area" id="uploadArea">
+        <input type="file" id="audioFile" accept="audio/*" hidden>
+        <div class="upload-content">
+          <span class="upload-icon">📁</span>
+          <p>Drop an audio file here or <button id="browseBtn">browse</button></p>
+          <small>Supports MP3, WAV, M4A, FLAC, and more</small>
+        </div>
+      </div>
+
+      <div class="file-info" id="fileInfo" hidden>
+        <div class="file-details">
+          <span class="file-name" id="fileName"></span>
+          <span class="file-meta" id="fileMeta"></span>
+        </div>
+        <button id="removeFile" class="btn-small">✕ Remove</button>
+      </div>
+    </section>
+
+    <section class="analysis-section" id="analysisSection" hidden>
+      <h2>Chunk Analysis</h2>
+
+      <div class="waveform-container">
+        <canvas id="waveformCanvas"></canvas>
+        <div class="chunk-markers" id="chunkMarkers"></div>
+      </div>
+
+      <div class="chunk-list" id="chunkList"></div>
+
+      <div class="actions">
+        <button id="analyzeBtn" class="btn-primary">🔍 Analyze Chunks</button>
+        <button id="transcribeBtn" class="btn-primary" disabled>🚀 Start Transcription</button>
+      </div>
+    </section>
+
+    <section class="progress-section" id="progressSection" hidden>
+      <h2>Transcription Progress</h2>
+
+      <div class="progress-bar">
+        <div class="progress-fill" id="progressFill"></div>
+        <span class="progress-text" id="progressText">0%</span>
+      </div>
+
+      <div class="progress-details">
+        <span id="currentChunk">Chunk 0 of 0</span>
+        <span id="elapsedTime">Elapsed: 0:00</span>
+      </div>
+
+      <div class="chunk-progress" id="chunkProgress"></div>
+    </section>
+
+    <section class="results-section" id="resultsSection" hidden>
+      <h2>Transcription Results</h2>
+
+      <div class="results-actions">
+        <button id="copyBtn" class="btn-secondary">📋 Copy Text</button>
+        <button id="downloadBtn" class="btn-secondary">💾 Download</button>
+      </div>
+
+      <div class="transcript-container">
+        <div class="transcript-text" id="transcriptText"></div>
+      </div>
+
+      <div class="chunk-transcripts" id="chunkTranscripts"></div>
+    </section>
+
+    <section class="logs-section">
+      <h2>Debug Logs <button id="clearLogs" class="btn-small">Clear</button></h2>
+      <div class="logs-container" id="logsContainer"></div>
+    </section>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
