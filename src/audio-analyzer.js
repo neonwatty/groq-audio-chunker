@@ -5,23 +5,63 @@
 import { log } from './logger.js';
 
 /**
- * Get the duration of an audio file without fully loading it
+ * Get the duration of an audio file
+ * Uses AudioContext for reliable duration detection
  */
-export function getAudioDuration(file) {
+export async function getAudioDuration(file) {
+  // First try the fast Audio element approach
+  try {
+    const duration = await getAudioDurationViaAudioElement(file);
+    if (duration && duration !== Infinity && !isNaN(duration)) {
+      return duration;
+    }
+  } catch (e) {
+    log(`Audio element approach failed: ${e.message}, trying AudioContext...`, 'warning');
+  }
+
+  // Fallback to AudioContext (slower but more reliable)
+  const arrayBuffer = await file.arrayBuffer();
+  const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+  try {
+    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+    await audioContext.close();
+    return audioBuffer.duration;
+  } catch (e) {
+    await audioContext.close();
+    throw new Error(`Failed to decode audio: ${e.message}`);
+  }
+}
+
+/**
+ * Try to get duration via Audio element (fast but not always reliable)
+ */
+function getAudioDurationViaAudioElement(file) {
   return new Promise((resolve, reject) => {
     const audio = new Audio();
     const url = URL.createObjectURL(file);
 
-    audio.addEventListener('loadedmetadata', () => {
+    const timeout = setTimeout(() => {
+      cleanup();
+      reject(new Error('Timeout'));
+    }, 3000);
+
+    const cleanup = () => {
+      clearTimeout(timeout);
       URL.revokeObjectURL(url);
+    };
+
+    audio.addEventListener('loadedmetadata', () => {
+      cleanup();
       resolve(audio.duration);
     });
 
-    audio.addEventListener('error', (e) => {
-      URL.revokeObjectURL(url);
-      reject(new Error(`Failed to load audio metadata: ${e.message}`));
+    audio.addEventListener('error', () => {
+      cleanup();
+      reject(new Error('Error loading'));
     });
 
+    audio.preload = 'metadata';
     audio.src = url;
   });
 }

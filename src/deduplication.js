@@ -74,82 +74,156 @@ export function mergeTranscriptsWithDeduplication(results, overlapDurationSec = 
  * Deduplicate words by their absolute timestamps
  *
  * Algorithm:
- * 1. Sort all words by absolute start time
- * 2. For words with similar timestamps (within tolerance), keep the one with higher centrality
- * 3. Reconstruct the text from the deduplicated word list
+ * 1. Group words by chunk, preserving original order within each chunk
+ * 2. Process chunks sequentially (NOT sorted by timestamp globally)
+ * 3. For overlap regions, determine which chunk is authoritative
+ * 4. Build final transcript by concatenating non-overlap portions from each chunk
+ *
+ * KEY INSIGHT: We must NOT sort words by timestamp globally because Whisper
+ * sometimes returns slightly out-of-order timestamps within a chunk. Instead,
+ * we preserve the original word order within each chunk.
  */
 function deduplicateByTimestamp(words, overlapDurationSec) {
-  // Sort by absolute start time
-  words.sort((a, b) => a.absoluteStart - b.absoluteStart);
+  // Step 1: Group words by chunk, preserving original order (do NOT sort!)
+  const wordsByChunk = new Map();
+  for (const word of words) {
+    if (!wordsByChunk.has(word.chunkIndex)) {
+      wordsByChunk.set(word.chunkIndex, []);
+    }
+    wordsByChunk.get(word.chunkIndex).push(word);
+  }
 
-  const TIMESTAMP_TOLERANCE = 0.3; // 300ms tolerance for "same" word
-  const deduplicated = [];
-  let wordsDeduplicated = 0;
+  const chunkIndices = [...wordsByChunk.keys()].sort((a, b) => a - b);
+
+  if (chunkIndices.length === 0) {
+    return { text: '', words: [], allWords: [], stats: { overlapsMerged: 0, wordsDeduplicated: 0 } };
+  }
+
+  // Step 2: Identify overlap regions and determine authoritative chunk for each
+  const overlapRegions = new Map(); // chunkIndex -> { overlapStart, cutoffIndex, nextChunkStartIndex }
   let overlapRegionsProcessed = new Set();
 
-  for (let i = 0; i < words.length; i++) {
-    const current = words[i];
+  for (let i = 0; i < chunkIndices.length - 1; i++) {
+    const chunkIndex = chunkIndices[i];
+    const nextChunkIndex = chunkIndices[i + 1];
 
-    // Look ahead for duplicates (words from different chunks at similar timestamps)
-    let dominated = false;
+    const chunkWords = wordsByChunk.get(chunkIndex);
+    const nextChunkWords = wordsByChunk.get(nextChunkIndex);
 
-    for (let j = i + 1; j < words.length; j++) {
-      const next = words[j];
+    if (chunkWords.length === 0 || nextChunkWords.length === 0) continue;
 
-      // If we're past the tolerance window, stop looking
-      if (next.absoluteStart - current.absoluteStart > TIMESTAMP_TOLERANCE) {
-        break;
-      }
+    // Find where timestamps overlap using the first/last word timestamps
+    const thisChunkEnd = chunkWords[chunkWords.length - 1].absoluteEnd;
+    const nextChunkStart = nextChunkWords[0].absoluteStart;
 
-      // Check if this is the same word from a different chunk
-      if (next.chunkIndex !== current.chunkIndex) {
-        // Same timestamp region, different chunks = overlap
-        overlapRegionsProcessed.add(`${current.chunkIndex}-${next.chunkIndex}`);
+    // If there's overlap (this chunk ends after next chunk starts)
+    if (thisChunkEnd > nextChunkStart) {
+      const overlapStart = nextChunkStart;
+      const overlapEnd = thisChunkEnd;
 
-        // Compare the words (might be transcribed slightly differently)
-        const sameWord = normalizeWord(current.word) === normalizeWord(next.word);
-        const similarTiming = Math.abs(next.absoluteStart - current.absoluteStart) < TIMESTAMP_TOLERANCE;
+      overlapRegionsProcessed.add(`${chunkIndex}-${nextChunkIndex}`);
 
-        if (similarTiming) {
-          // Keep the one with higher centrality (further from chunk boundary)
-          if (next.centrality > current.centrality) {
-            dominated = true;
-            wordsDeduplicated++;
-            break;
-          }
+      // Find words in the overlap region from both chunks
+      // For this chunk: words where absoluteStart >= overlapStart
+      // For next chunk: words where absoluteStart <= overlapEnd
+      let thisChunkOverlapStartIdx = chunkWords.length;
+      for (let j = 0; j < chunkWords.length; j++) {
+        if (chunkWords[j].absoluteStart >= overlapStart - 0.1) {
+          thisChunkOverlapStartIdx = j;
+          break;
         }
       }
-    }
 
-    if (!dominated) {
-      deduplicated.push(current);
+      let nextChunkOverlapEndIdx = 0;
+      for (let j = 0; j < nextChunkWords.length; j++) {
+        if (nextChunkWords[j].absoluteStart > overlapEnd + 0.1) {
+          break;
+        }
+        nextChunkOverlapEndIdx = j + 1;
+      }
+
+      const thisChunkOverlapWords = chunkWords.slice(thisChunkOverlapStartIdx);
+      const nextChunkOverlapWords = nextChunkWords.slice(0, nextChunkOverlapEndIdx);
+
+      // Calculate average centrality for each chunk's overlap words
+      const thisChunkCentrality = thisChunkOverlapWords.length > 0
+        ? thisChunkOverlapWords.reduce((sum, w) => sum + w.centrality, 0) / thisChunkOverlapWords.length
+        : 0;
+      const nextChunkCentrality = nextChunkOverlapWords.length > 0
+        ? nextChunkOverlapWords.reduce((sum, w) => sum + w.centrality, 0) / nextChunkOverlapWords.length
+        : 0;
+
+      // The chunk with higher centrality is authoritative for the overlap region
+      const useNextChunk = nextChunkCentrality > thisChunkCentrality;
+
+      log(`Overlap region ${overlapStart.toFixed(2)}s-${overlapEnd.toFixed(2)}s: Chunk ${useNextChunk ? nextChunkIndex + 1 : chunkIndex + 1} is authoritative (centrality: ${useNextChunk ? nextChunkCentrality.toFixed(2) : thisChunkCentrality.toFixed(2)} vs ${useNextChunk ? thisChunkCentrality.toFixed(2) : nextChunkCentrality.toFixed(2)})`);
+
+      // Store where to cut off this chunk and where to start the next chunk
+      if (useNextChunk) {
+        // Cut off this chunk at the overlap start, next chunk starts from beginning
+        overlapRegions.set(chunkIndex, {
+          cutoffIndex: thisChunkOverlapStartIdx, // Exclude overlap words from this chunk
+          overlapWordsCount: thisChunkOverlapWords.length
+        });
+        overlapRegions.set(nextChunkIndex, {
+          startIndex: 0, // Include all words from next chunk
+          overlapWordsCount: 0
+        });
+      } else {
+        // Keep all words from this chunk, skip overlap portion of next chunk
+        overlapRegions.set(chunkIndex, {
+          cutoffIndex: chunkWords.length, // Include all words from this chunk
+          overlapWordsCount: 0
+        });
+        overlapRegions.set(nextChunkIndex, {
+          startIndex: nextChunkOverlapEndIdx, // Skip overlap words from next chunk
+          overlapWordsCount: nextChunkOverlapWords.length
+        });
+      }
     }
   }
 
-  // Also check backwards for any we missed (words where a later one dominates an earlier one)
-  // This handles cases where the second chunk's word should replace the first chunk's word
+  // Step 3: Build final word list by processing chunks in order
   const finalWords = [];
-  const seen = new Set();
+  let wordsDeduplicated = 0;
+  const allWordsWithStatus = [];
 
-  for (const word of deduplicated) {
-    // Create a key for this timestamp region
-    const timeKey = Math.round(word.absoluteStart * 3); // ~333ms buckets
+  for (let i = 0; i < chunkIndices.length; i++) {
+    const chunkIndex = chunkIndices[i];
+    const chunkWords = wordsByChunk.get(chunkIndex);
 
-    // Check if we've already seen a word in this time bucket
-    if (seen.has(timeKey)) {
-      // Find the existing word
-      const existing = finalWords.find(w => Math.round(w.absoluteStart * 3) === timeKey);
-      if (existing && word.centrality > existing.centrality) {
-        // Replace with higher centrality word
-        const idx = finalWords.indexOf(existing);
-        finalWords[idx] = word;
-        wordsDeduplicated++;
-      } else {
-        wordsDeduplicated++;
+    // Determine start and end indices for this chunk
+    let startIdx = 0;
+    let endIdx = chunkWords.length;
+
+    // Check if we have overlap info for this chunk
+    if (overlapRegions.has(chunkIndex)) {
+      const overlapInfo = overlapRegions.get(chunkIndex);
+      if (overlapInfo.cutoffIndex !== undefined) {
+        endIdx = overlapInfo.cutoffIndex;
+        wordsDeduplicated += overlapInfo.overlapWordsCount || 0;
       }
-    } else {
-      seen.add(timeKey);
-      finalWords.push(word);
+      if (overlapInfo.startIndex !== undefined) {
+        startIdx = overlapInfo.startIndex;
+        wordsDeduplicated += overlapInfo.overlapWordsCount || 0;
+      }
+    }
+
+    // Add words from this chunk (in original order!)
+    for (let j = 0; j < chunkWords.length; j++) {
+      const word = chunkWords[j];
+      const isIncluded = j >= startIdx && j < endIdx;
+
+      allWordsWithStatus.push({
+        ...word,
+        deduplicated: !isIncluded,
+        inOverlap: overlapRegionsProcessed.has(`${chunkIndex - 1}-${chunkIndex}`) ||
+                   overlapRegionsProcessed.has(`${chunkIndex}-${chunkIndex + 1}`)
+      });
+
+      if (isIncluded) {
+        finalWords.push(word);
+      }
     }
   }
 
@@ -157,16 +231,6 @@ function deduplicateByTimestamp(words, overlapDurationSec) {
   const text = finalWords.map(w => w.word).join(' ');
 
   log(`Timestamp deduplication: ${wordsDeduplicated} duplicate words removed`, 'success');
-
-  // Mark which words in the original list were deduplicated (for debug view)
-  const finalWordSet = new Set(finalWords.map(w => `${w.absoluteStart.toFixed(3)}-${w.chunkIndex}`));
-  const allWordsWithStatus = words.map(w => ({
-    ...w,
-    deduplicated: !finalWordSet.has(`${w.absoluteStart.toFixed(3)}-${w.chunkIndex}`),
-    inOverlap: overlapRegionsProcessed.has(`${Math.min(w.chunkIndex, w.chunkIndex + 1)}-${Math.max(w.chunkIndex, w.chunkIndex + 1)}`) ||
-               overlapRegionsProcessed.has(`${w.chunkIndex - 1}-${w.chunkIndex}`) ||
-               overlapRegionsProcessed.has(`${w.chunkIndex}-${w.chunkIndex + 1}`)
-  }));
 
   return {
     text,
