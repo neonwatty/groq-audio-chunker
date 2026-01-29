@@ -49,11 +49,30 @@ export async function transcribeChunk(audioBlob, apiKey, options = {}) {
     clearTimeout(timeoutId);
 
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(
-        errorData.error?.message ||
-        `Groq API error: ${response.status} ${response.statusText}`
-      );
+      // Try to get detailed error info from response
+      let errorMessage = `Groq API error: ${response.status} ${response.statusText}`;
+
+      try {
+        const errorText = await response.text();
+        log(`API Error Response (${response.status}): ${errorText}`, 'error');
+
+        // Try to parse as JSON for structured error
+        try {
+          const errorData = JSON.parse(errorText);
+          if (errorData.error?.message) {
+            errorMessage = errorData.error.message;
+          }
+        } catch {
+          // Not JSON, use raw text if it's informative
+          if (errorText && errorText.length < 500) {
+            errorMessage = errorText;
+          }
+        }
+      } catch {
+        log(`Could not read error response body`, 'warning');
+      }
+
+      throw new Error(errorMessage);
     }
 
     const data = await response.json();
