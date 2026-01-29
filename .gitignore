@@ -30,3 +30,7 @@ coverage/
 # Temporary files
 tmp/
 temp/
+
+# Test audio files (downloaded from YouTube, etc.)
+test-audio/
+public/test-audio/

@@ -53,6 +53,11 @@ const elements = {
   fileMeta: document.getElementById('fileMeta'),
   removeFile: document.getElementById('removeFile'),
 
+  // Test Audio
+  testAudioSection: document.getElementById('testAudioSection'),
+  testAudioSelect: document.getElementById('testAudioSelect'),
+  loadTestAudioBtn: document.getElementById('loadTestAudioBtn'),
+
   // Analysis
   analysisSection: document.getElementById('analysisSection'),
   waveformCanvas: document.getElementById('waveformCanvas'),
@@ -82,6 +87,7 @@ const elements = {
   // Debug View
   showWordTimestamps: document.getElementById('showWordTimestamps'),
   wordTimeline: document.getElementById('wordTimeline'),
+  wordViewMode: document.getElementById('wordViewMode'),
   jumpToTime: document.getElementById('jumpToTime'),
   wordFilter: document.getElementById('wordFilter'),
   wordList: document.getElementById('wordList'),
@@ -95,6 +101,19 @@ function init() {
   log('Groq Audio Chunker initialized (with overlap + deduplication)');
   setupEventListeners();
   loadSavedSettings();
+  loadApiKeyFromEnv();
+  loadTestAudioManifest();
+}
+
+/**
+ * Load API key from environment variable (via Vite)
+ */
+function loadApiKeyFromEnv() {
+  const envApiKey = import.meta.env.VITE_GROQ_API_KEY;
+  if (envApiKey) {
+    elements.apiKey.value = envApiKey;
+    log('API key loaded from environment');
+  }
 }
 
 function setupEventListeners() {
@@ -153,6 +172,12 @@ function setupEventListeners() {
 
   elements.removeFile.addEventListener('click', handleFileRemove);
 
+  // Test audio
+  elements.testAudioSelect.addEventListener('change', (e) => {
+    elements.loadTestAudioBtn.disabled = !e.target.value;
+  });
+  elements.loadTestAudioBtn.addEventListener('click', handleLoadTestAudio);
+
   // Actions
   elements.analyzeBtn.addEventListener('click', handleAnalyze);
   elements.transcribeBtn.addEventListener('click', handleTranscribe);
@@ -170,6 +195,10 @@ function setupEventListeners() {
   });
 
   elements.wordFilter.addEventListener('change', () => {
+    if (allWordsRaw) renderWordTimeline();
+  });
+
+  elements.wordViewMode.addEventListener('change', () => {
     if (allWordsRaw) renderWordTimeline();
   });
 
@@ -218,6 +247,60 @@ function saveSettings() {
     overlapDuration: elements.overlapDuration.value
   };
   localStorage.setItem('groqChunkerSettings', JSON.stringify(settings));
+}
+
+async function loadTestAudioManifest() {
+  try {
+    const response = await fetch('/test-audio-manifest.json');
+    if (!response.ok) {
+      elements.testAudioSection.hidden = true;
+      return;
+    }
+
+    const manifest = await response.json();
+    if (manifest.files && manifest.files.length > 0) {
+      elements.testAudioSelect.innerHTML = '<option value="">Select a test file...</option>';
+      for (const file of manifest.files) {
+        const option = document.createElement('option');
+        option.value = file.filename;
+        option.textContent = `${file.name} (${file.duration})`;
+        elements.testAudioSelect.appendChild(option);
+      }
+      log(`Found ${manifest.files.length} test audio file(s)`, 'info');
+    } else {
+      elements.testAudioSection.hidden = true;
+    }
+  } catch (e) {
+    // No manifest or error - hide test audio section
+    elements.testAudioSection.hidden = true;
+  }
+}
+
+async function handleLoadTestAudio() {
+  const filename = elements.testAudioSelect.value;
+  if (!filename) return;
+
+  elements.loadTestAudioBtn.disabled = true;
+  elements.loadTestAudioBtn.textContent = 'Loading...';
+
+  try {
+    log(`Loading test audio: ${filename}`);
+    const response = await fetch(`/test-audio/${encodeURIComponent(filename)}`);
+    if (!response.ok) {
+      throw new Error(`Failed to load: ${response.statusText}`);
+    }
+
+    const blob = await response.blob();
+    const file = new File([blob], filename, { type: blob.type || 'audio/mpeg' });
+
+    await handleFileSelect(file);
+    log(`Loaded test audio: ${filename}`, 'success');
+  } catch (error) {
+    log(`Failed to load test audio: ${error.message}`, 'error');
+  } finally {
+    elements.loadTestAudioBtn.disabled = false;
+    elements.loadTestAudioBtn.textContent = 'Load';
+  }
 }
 
 async function handleFileSelect(file) {
@@ -522,6 +605,7 @@ function renderWordTimeline() {
   }
 
   const filter = elements.wordFilter.value;
+  const viewMode = elements.wordViewMode.value;
   let wordsToShow = allWordsRaw;
 
   // Apply filter
@@ -536,14 +620,48 @@ function renderWordTimeline() {
     return;
   }
 
-  // Group words by time (for easier visualization)
-  const html = wordsToShow.map((w, idx) => {
+  // Set view mode class on container
+  elements.wordList.className = `word-list view-${viewMode}`;
+
+  let html;
+  if (viewMode === 'flow') {
+    html = renderFlowingTranscript(wordsToShow);
+  } else {
+    html = renderDebugList(wordsToShow);
+  }
+
+  elements.wordList.innerHTML = html;
+  log(`Word timeline: showing ${wordsToShow.length} of ${allWordsRaw.length} words (${viewMode} view)`, 'info');
+}
+
+/**
+ * Render flowing transcript with timestamps below words
+ */
+function renderFlowingTranscript(words) {
+  return words.map(w => {
+    const classes = ['word-flow'];
+    classes.push(`chunk-${w.chunkIndex % 5}`);
+    if (w.inOverlap) classes.push('in-overlap');
+    if (w.deduplicated) classes.push('deduplicated');
+
+    const timestamp = formatTimeMs(w.absoluteStart);
+
+    return `
+      <span class="${classes.join(' ')}" data-time="${w.absoluteStart}">
+        <span class="word-text">${escapeHtml(w.word)}</span>
+        <span class="word-ts">${timestamp}</span>
+      </span>
+    `;
+  }).join('');
+}
+
+/**
+ * Render detailed debug list view
+ */
+function renderDebugList(words) {
+  return words.map(w => {
     const classes = ['word-item'];
-
-    // Chunk color class (cycle through 3 colors)
-    classes.push(`chunk-${w.chunkIndex % 3}`);
-
-    // Overlap and deduplication status
+    classes.push(`chunk-${w.chunkIndex % 5}`);
     if (w.inOverlap) classes.push('in-overlap');
     if (w.deduplicated) classes.push('deduplicated');
 
@@ -561,9 +679,6 @@ function renderWordTimeline() {
       </div>
     `;
   }).join('');
-
-  elements.wordList.innerHTML = html;
-  log(`Word timeline: showing ${wordsToShow.length} of ${allWordsRaw.length} words`, 'info');
 }
 
 /**

@@ -60,6 +60,14 @@
         </div>
       </div>
 
+      <div class="test-audio-section" id="testAudioSection">
+        <p class="test-audio-label">Or load test audio:</p>
+        <select id="testAudioSelect">
+          <option value="">Select a test file...</option>
+        </select>
+        <button id="loadTestAudioBtn" class="btn-secondary" disabled>Load</button>
+      </div>
+
       <div class="file-info" id="fileInfo" hidden>
         <div class="file-details">
           <span class="file-name" id="fileName"></span>
@@ -137,8 +145,11 @@
         <div class="word-timeline" id="wordTimeline" hidden>
           <div class="timeline-controls">
             <label>
-              Jump to time:
-              <input type="text" id="jumpToTime" placeholder="e.g., 10:00" class="time-input">
+              View:
+              <select id="wordViewMode">
+                <option value="flow">Flowing Transcript</option>
+                <option value="list">Debug List</option>
+              </select>
             </label>
             <label>
               Filter:
@@ -147,6 +158,10 @@
                 <option value="overlap">Overlap Regions Only</option>
                 <option value="deduplicated">Deduplicated Words</option>
               </select>
+            </label>
+            <label>
+              Jump to time:
+              <input type="text" id="jumpToTime" placeholder="e.g., 1:30" class="time-input">
             </label>
           </div>
 

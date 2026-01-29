@@ -181,6 +181,37 @@ input[type="range"]::-webkit-slider-thumb {
   color: var(--text-muted);
 }
 
+/* Test Audio Section */
+.test-audio-section {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px dashed var(--border);
+}
+
+.test-audio-label {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.test-audio-section select {
+  flex: 1;
+  max-width: 300px;
+  padding: 0.5rem;
+  background: var(--surface-elevated);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 0.85rem;
+}
+
+.test-audio-section select:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
 /* Buttons */
 button {
   font-family: inherit;
@@ -711,6 +742,74 @@ button {
   text-align: center;
   padding: 2rem;
   font-style: italic;
+}
+
+/* Flowing Transcript View */
+.word-list.view-flow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 1rem;
+  line-height: 1.4;
+}
+
+.word-flow {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0.25rem 0.4rem;
+  border-radius: 4px;
+  cursor: default;
+  transition: transform 0.1s;
+}
+
+.word-flow:hover {
+  transform: scale(1.05);
+}
+
+.word-flow .word-text {
+  font-size: 0.95rem;
+  font-weight: 500;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.word-flow .word-ts {
+  font-size: 0.6rem;
+  font-family: 'Monaco', 'Menlo', monospace;
+  color: var(--text-muted);
+  margin-top: 2px;
+  opacity: 0.8;
+}
+
+/* Chunk colors for flow view */
+.word-flow.chunk-0 { background: rgba(59, 130, 246, 0.15); border-bottom: 2px solid #3b82f6; }
+.word-flow.chunk-1 { background: rgba(34, 197, 94, 0.15); border-bottom: 2px solid #22c55e; }
+.word-flow.chunk-2 { background: rgba(245, 158, 11, 0.15); border-bottom: 2px solid #f59e0b; }
+.word-flow.chunk-3 { background: rgba(236, 72, 153, 0.15); border-bottom: 2px solid #ec4899; }
+.word-flow.chunk-4 { background: rgba(14, 165, 233, 0.15); border-bottom: 2px solid #0ea5e9; }
+
+.word-flow.in-overlap {
+  outline: 2px dashed rgba(139, 92, 246, 0.7);
+  outline-offset: 2px;
+  background: rgba(139, 92, 246, 0.15);
+}
+
+.word-flow.deduplicated {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: rgba(239, 68, 68, 0.5);
+}
+
+.word-flow.deduplicated .word-text {
+  text-decoration: line-through;
+  opacity: 0.5;
+}
+
+.word-flow.deduplicated .word-ts {
+  color: var(--error);
+}
+
+.word-flow.highlight {
+  animation: highlightPulse 2s ease-out;
 }
 
 .word-item .word-timestamp {

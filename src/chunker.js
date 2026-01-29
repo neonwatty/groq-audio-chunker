@@ -135,26 +135,110 @@ export async function calculateChunks(file, options = {}) {
 
 /**
  * Extract a chunk from the audio file as a Blob
- * Uses byte slicing with a small buffer to ensure valid audio frames
+ * Uses Web Audio API to properly decode and re-encode as WAV
+ * This avoids MP3 frame boundary issues from byte slicing
  */
 export async function extractChunkBlob(file, chunk) {
-  const duration = await getAudioDuration(file);
-  const bytesPerSec = file.size / duration;
-
-  // Add tiny buffer for audio frame alignment (separate from semantic overlap)
-  const frameBuffer = 0.05; // 50ms for frame alignment
-  const startByte = Math.max(0, Math.floor((chunk.start - frameBuffer) * bytesPerSec));
-  const endByte = Math.min(file.size, Math.ceil((chunk.end + frameBuffer) * bytesPerSec));
-
-  const blob = file.slice(startByte, endByte, file.type || 'audio/mpeg');
-
   const overlapInfo = chunk.overlap.leading > 0 || chunk.overlap.trailing > 0
     ? ` (overlap: ${chunk.overlap.leading}s leading, ${chunk.overlap.trailing}s trailing)`
     : '';
 
-  log(`Extracted chunk ${chunk.index + 1}: ${(blob.size / 1024 / 1024).toFixed(2)} MB${overlapInfo}`);
+  log(`Extracting chunk ${chunk.index + 1}: ${formatTime(chunk.start)} → ${formatTime(chunk.end)}${overlapInfo}`);
 
-  return blob;
+  // Decode the entire audio file
+  const arrayBuffer = await file.arrayBuffer();
+  const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+  try {
+    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+
+    // Calculate sample positions for the chunk
+    const sampleRate = audioBuffer.sampleRate;
+    const startSample = Math.floor(chunk.start * sampleRate);
+    const endSample = Math.min(Math.ceil(chunk.end * sampleRate), audioBuffer.length);
+    const numSamples = endSample - startSample;
+
+    // Create a new buffer for the chunk
+    const numChannels = audioBuffer.numberOfChannels;
+    const chunkBuffer = audioContext.createBuffer(numChannels, numSamples, sampleRate);
+
+    // Copy the samples for each channel
+    for (let channel = 0; channel < numChannels; channel++) {
+      const sourceData = audioBuffer.getChannelData(channel);
+      const destData = chunkBuffer.getChannelData(channel);
+      for (let i = 0; i < numSamples; i++) {
+        destData[i] = sourceData[startSample + i];
+      }
+    }
+
+    // Encode as WAV
+    const wavBlob = audioBufferToWav(chunkBuffer);
+
+    log(`Extracted chunk ${chunk.index + 1}: ${(wavBlob.size / 1024 / 1024).toFixed(2)} MB (WAV)`);
+
+    return wavBlob;
+  } finally {
+    await audioContext.close();
+  }
+}
+
+/**
+ * Convert an AudioBuffer to a WAV Blob
+ * WAV format avoids the frame boundary issues of compressed formats like MP3
+ */
+function audioBufferToWav(audioBuffer) {
+  const numChannels = audioBuffer.numberOfChannels;
+  const sampleRate = audioBuffer.sampleRate;
+  const numSamples = audioBuffer.length;
+
+  // Interleave channels
+  const interleaved = new Float32Array(numSamples * numChannels);
+  for (let channel = 0; channel < numChannels; channel++) {
+    const channelData = audioBuffer.getChannelData(channel);
+    for (let i = 0; i < numSamples; i++) {
+      interleaved[i * numChannels + channel] = channelData[i];
+    }
+  }
+
+  // Convert to 16-bit PCM
+  const pcmData = new Int16Array(interleaved.length);
+  for (let i = 0; i < interleaved.length; i++) {
+    const sample = Math.max(-1, Math.min(1, interleaved[i]));
+    pcmData[i] = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
+  }
+
+  // Create WAV file
+  const wavBuffer = new ArrayBuffer(44 + pcmData.length * 2);
+  const view = new DataView(wavBuffer);
+
+  // WAV header
+  const writeString = (offset, str) => {
+    for (let i = 0; i < str.length; i++) {
+      view.setUint8(offset + i, str.charCodeAt(i));
+    }
+  };
+
+  writeString(0, 'RIFF');
+  view.setUint32(4, 36 + pcmData.length * 2, true);
+  writeString(8, 'WAVE');
+  writeString(12, 'fmt ');
+  view.setUint32(16, 16, true); // fmt chunk size
+  view.setUint16(20, 1, true); // audio format (PCM)
+  view.setUint16(22, numChannels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * numChannels * 2, true); // byte rate
+  view.setUint16(32, numChannels * 2, true); // block align
+  view.setUint16(34, 16, true); // bits per sample
+  writeString(36, 'data');
+  view.setUint32(40, pcmData.length * 2, true);
+
+  // Write PCM data
+  const pcmOffset = 44;
+  for (let i = 0; i < pcmData.length; i++) {
+    view.setInt16(pcmOffset + i * 2, pcmData[i], true);
+  }
+
+  return new Blob([wavBuffer], { type: 'audio/wav' });
 }
 
 /**
