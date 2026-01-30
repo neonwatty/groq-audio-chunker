@@ -1174,3 +1174,250 @@ button {
     padding: 1.5rem;
   }
 }
+
+/* ==================== Pre-flight Check UI ==================== */
+
+.preflight-container {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 1.5rem;
+  overflow: hidden;
+}
+
+.preflight-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  background: var(--surface-elevated);
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+}
+
+.preflight-header h3 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.preflight-toggle {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.8rem;
+  padding: 0.25rem;
+}
+
+.preflight-toggle:hover {
+  color: var(--text);
+}
+
+.preflight-content {
+  padding: 1rem;
+}
+
+.preflight-device {
+  margin-bottom: 1rem;
+}
+
+.device-loading {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.device-error {
+  color: var(--error);
+  font-size: 0.9rem;
+}
+
+.device-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.device-tier-icon {
+  font-size: 1.1rem;
+}
+
+.device-type {
+  font-weight: 600;
+}
+
+.device-platform {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.device-specs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.9rem;
+}
+
+.spec-item {
+  color: var(--text-muted);
+}
+
+.device-capabilities {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.capability-badge {
+  display: inline-block;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.capability-badge.supported {
+  background: rgba(34, 197, 94, 0.2);
+  color: var(--success);
+}
+
+.capability-badge.unsupported {
+  background: rgba(239, 68, 68, 0.2);
+  color: var(--error);
+}
+
+.capability-badge.limited {
+  background: rgba(234, 179, 8, 0.2);
+  color: var(--warning);
+}
+
+.preflight-recommendation {
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+  margin-top: 1rem;
+}
+
+.recommendation-status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  font-weight: 500;
+}
+
+.recommendation-status.status-good {
+  color: var(--success);
+}
+
+.recommendation-status.status-ok {
+  color: var(--warning);
+}
+
+.recommendation-status.status-warning {
+  color: var(--warning);
+}
+
+.recommendation-status.status-error {
+  color: var(--error);
+}
+
+.status-icon {
+  font-size: 1rem;
+}
+
+.recommendation-details {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.75rem;
+}
+
+.detail-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.detail-label {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.detail-value {
+  font-size: 0.95rem;
+  font-weight: 500;
+}
+
+.preflight-warnings,
+.preflight-tips {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.preflight-warnings h4,
+.preflight-tips h4 {
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.preflight-warnings ul,
+.preflight-tips ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.preflight-warnings li,
+.preflight-tips li {
+  padding: 0.4rem 0;
+  padding-left: 1rem;
+  position: relative;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+.preflight-warnings li::before {
+  content: '•';
+  position: absolute;
+  left: 0;
+  color: var(--warning);
+}
+
+.preflight-tips li::before {
+  content: '•';
+  position: absolute;
+  left: 0;
+  color: var(--primary);
+}
+
+/* Device tier styling */
+.tier-high .device-type {
+  color: var(--success);
+}
+
+.tier-medium .device-type {
+  color: var(--warning);
+}
+
+.tier-low .device-type {
+  color: var(--error);
+}
+
+/* Mobile responsive */
+@media (max-width: 600px) {
+  .preflight-content {
+    padding: 0.75rem;
+  }
+
+  .device-specs {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .recommendation-details {
+    grid-template-columns: 1fr;
+  }
+}
