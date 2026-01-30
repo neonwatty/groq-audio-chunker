@@ -11,6 +11,10 @@
     <header>
       <h1>🎙️ Groq Audio Chunker</h1>
       <p class="subtitle">Browser-based audio chunking with smart silence detection</p>
+      <div id="ffmpegStatus" class="ffmpeg-status">
+        <span class="status-dot loading"></span>
+        <span class="status-text">Checking FFmpeg...</span>
+      </div>
     </header>
 
     <section class="config-section">
@@ -96,6 +100,12 @@
     <section class="progress-section" id="progressSection" hidden>
       <h2>Transcription Progress</h2>
 
+      <!-- Tab Warning Banner -->
+      <div class="tab-warning" id="tabWarning">
+        <span class="tab-warning-icon">⚠️</span>
+        <span class="tab-warning-text">Keep this tab open and active. Processing happens in your browser and will stop if you close or navigate away.</span>
+      </div>
+
       <div class="progress-bar">
         <div class="progress-fill" id="progressFill"></div>
         <span class="progress-text" id="progressText">0%</span>
@@ -104,6 +114,12 @@
       <div class="progress-details">
         <span id="currentChunk">Chunk 0 of 0</span>
         <span id="elapsedTime">Elapsed: 0:00</span>
+        <button id="cancelBtn" class="btn-cancel" hidden>✕ Cancel</button>
+      </div>
+
+      <div class="retry-status" id="retryStatus" hidden>
+        <span class="retry-icon">🔄</span>
+        <span class="retry-text" id="retryText">Retrying...</span>
       </div>
 
       <div class="chunk-progress" id="chunkProgress"></div>
@@ -115,6 +131,12 @@
       <div class="results-actions">
         <button id="copyBtn" class="btn-secondary">📋 Copy Text</button>
         <button id="downloadBtn" class="btn-secondary">💾 Download</button>
+        <button id="retryFailedBtn" class="btn-retry" hidden>🔄 Retry Failed Chunks</button>
+      </div>
+
+      <div class="failed-chunks-warning" id="failedChunksWarning" hidden>
+        <span class="warning-icon">⚠️</span>
+        <span class="warning-text" id="failedChunksText">Some chunks failed to transcribe.</span>
       </div>
 
       <div class="merge-stats" id="mergeStats" hidden>

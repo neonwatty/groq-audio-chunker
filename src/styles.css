@@ -48,6 +48,43 @@ header h1 {
   color: var(--text-muted);
 }
 
+/* FFmpeg Status Indicator */
+.ffmpeg-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  padding: 0.4rem 0.8rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  font-size: 0.75rem;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+.status-dot.loading {
+  background: var(--warning);
+  animation: pulse 1s infinite;
+}
+
+.status-dot.ready {
+  background: var(--success);
+}
+
+.status-dot.fallback {
+  background: var(--text-muted);
+}
+
+.status-text {
+  color: var(--text-muted);
+}
+
 section {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -385,6 +422,12 @@ button {
   color: var(--error);
 }
 
+.chunk-status.retrying {
+  background: rgba(249, 115, 22, 0.2);
+  color: var(--primary);
+  animation: pulse 1s infinite;
+}
+
 .chunk-time {
   color: var(--text-muted);
   font-size: 0.8rem;
@@ -403,6 +446,66 @@ button {
   padding: 2px 6px;
   border-radius: 4px;
   margin-left: 0.5rem;
+}
+
+/* Tab Warning Banner */
+.tab-warning {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: rgba(234, 179, 8, 0.15);
+  border: 1px solid rgba(234, 179, 8, 0.4);
+  border-radius: 8px;
+  margin-bottom: 1rem;
+  font-size: 0.85rem;
+}
+
+.tab-warning-icon {
+  font-size: 1.1rem;
+  flex-shrink: 0;
+}
+
+.tab-warning-text {
+  color: var(--warning);
+  line-height: 1.4;
+}
+
+/* Retry Status */
+.retry-status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: rgba(249, 115, 22, 0.15);
+  border: 1px solid rgba(249, 115, 22, 0.4);
+  border-radius: 6px;
+  margin-top: 0.75rem;
+  font-size: 0.85rem;
+}
+
+.retry-icon {
+  animation: spin 1s linear infinite;
+}
+
+.retry-text {
+  color: var(--primary);
+}
+
+/* Cancel Button */
+.btn-cancel {
+  background: transparent;
+  color: var(--error);
+  border: 1px solid var(--error);
+  border-radius: 6px;
+  padding: 0.25rem 0.75rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-cancel:hover {
+  background: rgba(239, 68, 68, 0.15);
 }
 
 /* Progress */
@@ -434,6 +537,8 @@ button {
 .progress-details {
   display: flex;
   justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
   margin-top: 0.75rem;
   font-size: 0.85rem;
   color: var(--text-muted);
@@ -482,8 +587,69 @@ button {
 /* Results */
 .results-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.75rem;
   margin-bottom: 1rem;
+}
+
+.btn-retry {
+  background: rgba(249, 115, 22, 0.15);
+  color: var(--primary);
+  border: 1px solid var(--primary);
+  border-radius: 8px;
+  padding: 0.5rem 1rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-retry:hover:not(:disabled) {
+  background: rgba(249, 115, 22, 0.25);
+}
+
+.btn-retry:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-retry-small {
+  background: transparent;
+  color: var(--primary);
+  border: 1px solid var(--primary);
+  border-radius: 4px;
+  padding: 0.2rem 0.5rem;
+  font-size: 0.7rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-retry-small:hover:not(:disabled) {
+  background: rgba(249, 115, 22, 0.15);
+}
+
+.btn-retry-small:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.failed-chunks-warning {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  border-radius: 8px;
+  margin-bottom: 1rem;
+  font-size: 0.85rem;
+}
+
+.failed-chunks-warning .warning-icon {
+  font-size: 1.1rem;
+}
+
+.failed-chunks-warning .warning-text {
+  color: var(--error);
 }
 
 .merge-stats {
@@ -890,6 +1056,102 @@ button {
 .log-entry.warning { color: var(--warning); }
 .log-entry.error { color: var(--error); }
 
+/* FFmpeg Loading Overlay */
+.ffmpeg-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(4px);
+}
+
+.ffmpeg-modal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 2rem 3rem;
+  text-align: center;
+  max-width: 400px;
+  width: 90%;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+}
+
+.ffmpeg-icon {
+  font-size: 3rem;
+  margin-bottom: 1rem;
+  animation: spin 2s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.ffmpeg-modal h3 {
+  font-size: 1.25rem;
+  margin-bottom: 0.5rem;
+  color: var(--text);
+}
+
+.ffmpeg-modal p {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  margin-bottom: 1rem;
+}
+
+.ffmpeg-progress-bar {
+  background: var(--surface-elevated);
+  border-radius: 8px;
+  height: 12px;
+  position: relative;
+  overflow: hidden;
+  margin-bottom: 0.5rem;
+}
+
+.ffmpeg-progress-fill {
+  background: linear-gradient(90deg, var(--primary), var(--primary-hover));
+  height: 100%;
+  width: 0%;
+  transition: width 0.3s ease;
+  border-radius: 8px;
+}
+
+.ffmpeg-progress-fill.indeterminate {
+  width: 30%;
+  animation: indeterminate 1.5s ease-in-out infinite;
+}
+
+@keyframes indeterminate {
+  0% {
+    transform: translateX(-100%);
+  }
+  50% {
+    transform: translateX(250%);
+  }
+  100% {
+    transform: translateX(-100%);
+  }
+}
+
+.ffmpeg-progress-text {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--primary);
+}
+
+.ffmpeg-note {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 1rem;
+  margin-bottom: 0;
+}
+
 /* Responsive */
 @media (max-width: 640px) {
   .container {
@@ -906,5 +1168,9 @@ button {
 
   .chunk-list {
     grid-template-columns: 1fr;
+  }
+
+  .ffmpeg-modal {
+    padding: 1.5rem;
   }
 }
