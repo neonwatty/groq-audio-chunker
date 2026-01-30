@@ -156,7 +156,7 @@ export function renderChunkList(container, chunks) {
  */
 export function updateChunkStatus(container, chunkIndex, status, extra = '') {
   const item = container.querySelector(`[data-chunk-index="${chunkIndex}"]`);
-  if (!item) return;
+  if (!item) {return;}
 
   const statusEl = item.querySelector('.chunk-status');
   statusEl.className = `chunk-status ${status}`;
@@ -180,8 +180,8 @@ export function renderProgressPips(container, numChunks) {
   for (let i = 0; i < numChunks; i++) {
     const pip = document.createElement('div');
     pip.className = 'chunk-pip';
-    pip.dataset.chunkIndex = i;
-    pip.textContent = i + 1;
+    pip.dataset.chunkIndex = String(i);
+    pip.textContent = String(i + 1);
     container.appendChild(pip);
   }
 }

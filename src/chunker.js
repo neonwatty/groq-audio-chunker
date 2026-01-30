@@ -1,5 +1,6 @@
 /**
  * Audio chunking logic with smart silence-based cut points and overlap support
+ * Uses FFmpeg.wasm for memory-efficient chunk extraction
  */
 
 import { log } from './logger.js';
@@ -9,6 +10,7 @@ import {
   findBestCutPoint,
   formatTime
 } from './audio-analyzer.js';
+import { isFFmpegLoaded, extractChunkWithFFmpeg } from './ffmpeg-service.js';
 
 /**
  * Calculate chunk boundaries with smart silence detection and configurable overlap
@@ -135,8 +137,8 @@ export async function calculateChunks(file, options = {}) {
 
 /**
  * Extract a chunk from the audio file as a Blob
- * Uses Web Audio API to properly decode and re-encode as WAV
- * This avoids MP3 frame boundary issues from byte slicing
+ * Uses FFmpeg for memory-efficient time-based extraction
+ * Falls back to Web Audio API if FFmpeg is not available
  */
 export async function extractChunkBlob(file, chunk) {
   const overlapInfo = chunk.overlap.leading > 0 || chunk.overlap.trailing > 0
@@ -144,6 +146,28 @@ export async function extractChunkBlob(file, chunk) {
     : '';
 
   log(`Extracting chunk ${chunk.index + 1}: ${formatTime(chunk.start)} → ${formatTime(chunk.end)}${overlapInfo}`);
+
+  // Use FFmpeg for memory-efficient extraction (doesn't decode entire file)
+  if (isFFmpegLoaded()) {
+    try {
+      const blob = await extractChunkWithFFmpeg(file, chunk.start, chunk.end);
+      log(`Extracted chunk ${chunk.index + 1}: ${(blob.size / 1024 / 1024).toFixed(2)} MB (WAV via FFmpeg)`);
+      return blob;
+    } catch (error) {
+      log(`FFmpeg extraction failed: ${error.message}, trying Web Audio...`, 'warning');
+    }
+  }
+
+  // Fallback to Web Audio API (higher memory usage - decodes entire file)
+  return extractChunkBlobWebAudio(file, chunk);
+}
+
+/**
+ * Web Audio API fallback for chunk extraction
+ * Warning: This decodes the ENTIRE file into memory for each chunk
+ */
+async function extractChunkBlobWebAudio(file, chunk) {
+  log('Using Web Audio fallback (higher memory usage)', 'warning');
 
   // Decode the entire audio file
   const arrayBuffer = await file.arrayBuffer();
@@ -174,7 +198,7 @@ export async function extractChunkBlob(file, chunk) {
     // Encode as WAV
     const wavBlob = audioBufferToWav(chunkBuffer);
 
-    log(`Extracted chunk ${chunk.index + 1}: ${(wavBlob.size / 1024 / 1024).toFixed(2)} MB (WAV)`);
+    log(`Extracted chunk ${chunk.index + 1}: ${(wavBlob.size / 1024 / 1024).toFixed(2)} MB (WAV via Web Audio)`);
 
     return wavBlob;
   } finally {

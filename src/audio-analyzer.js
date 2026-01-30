@@ -1,12 +1,19 @@
 /**
  * Audio analysis utilities - silence detection and duration extraction
+ * Uses FFmpeg.wasm for memory-efficient processing with Web Audio API fallback
  */
 
 import { log } from './logger.js';
+import {
+  isFFmpegLoaded,
+  getDurationWithFFmpeg,
+  detectSilenceWithFFmpeg,
+  extractWaveformWithFFmpeg
+} from './ffmpeg-service.js';
 
 /**
  * Get the duration of an audio file
- * Uses AudioContext for reliable duration detection
+ * Uses FFmpeg if available (memory-efficient), falls back to Web Audio API
  */
 export async function getAudioDuration(file) {
   // First try the fast Audio element approach
@@ -16,10 +23,22 @@ export async function getAudioDuration(file) {
       return duration;
     }
   } catch (e) {
-    log(`Audio element approach failed: ${e.message}, trying AudioContext...`, 'warning');
+    log(`Audio element approach failed: ${e.message}`, 'warning');
   }
 
-  // Fallback to AudioContext (slower but more reliable)
+  // Try FFmpeg (memory-efficient)
+  if (isFFmpegLoaded()) {
+    try {
+      const duration = await getDurationWithFFmpeg(file);
+      log(`Duration from FFmpeg: ${duration.toFixed(1)}s`);
+      return duration;
+    } catch (e) {
+      log(`FFmpeg duration extraction failed: ${e.message}, trying AudioContext...`, 'warning');
+    }
+  }
+
+  // Fallback to AudioContext (slower, uses more memory)
+  log('Falling back to AudioContext for duration (higher memory usage)', 'warning');
   const arrayBuffer = await file.arrayBuffer();
   const audioContext = new (window.AudioContext || window.webkitAudioContext)();
 
@@ -68,7 +87,7 @@ function getAudioDurationViaAudioElement(file) {
 
 /**
  * Analyze a portion of the audio file for silence detection
- * Only loads a small window around the target time into memory
+ * Uses FFmpeg silencedetect filter if available (memory-efficient)
  */
 export async function analyzeWindowForSilence(file, targetTimeSec, windowSec, threshold) {
   log(`Analyzing ${windowSec}s window around ${formatTime(targetTimeSec)} for silence...`);
@@ -77,6 +96,32 @@ export async function analyzeWindowForSilence(file, targetTimeSec, windowSec, th
   const startSec = Math.max(0, targetTimeSec - windowSec / 2);
   const endSec = Math.min(duration, targetTimeSec + windowSec / 2);
 
+  // Try FFmpeg silencedetect (memory-efficient)
+  if (isFFmpegLoaded()) {
+    try {
+      // Convert linear threshold to dB (e.g., 0.01 → -40dB)
+      const thresholdDb = Math.round(20 * Math.log10(threshold));
+
+      const silences = await detectSilenceWithFFmpeg(file, startSec, endSec, thresholdDb, 0.3);
+
+      // Add midpoint for cut point selection
+      return silences.map(s => ({
+        ...s,
+        midpoint: (s.start + s.end) / 2
+      }));
+    } catch (error) {
+      log(`FFmpeg silence detection failed: ${error.message}, trying Web Audio...`, 'warning');
+    }
+  }
+
+  // Fallback to Web Audio API (higher memory usage)
+  return analyzeWindowForSilenceWebAudio(file, startSec, endSec, duration, threshold);
+}
+
+/**
+ * Web Audio API fallback for silence detection
+ */
+async function analyzeWindowForSilenceWebAudio(file, startSec, endSec, duration, threshold) {
   // Estimate byte positions (rough approximation)
   const bytesPerSec = file.size / duration;
   const startByte = Math.floor(startSec * bytesPerSec);
@@ -197,10 +242,24 @@ export function findBestCutPoint(silences, targetTimeSec) {
 
 /**
  * Generate waveform data for visualization
+ * Uses FFmpeg if available (memory-efficient), falls back to Web Audio API
  */
 export async function generateWaveformData(file, numPoints = 500) {
   log('Generating waveform visualization...');
 
+  // Try FFmpeg (memory-efficient)
+  if (isFFmpegLoaded()) {
+    try {
+      const result = await extractWaveformWithFFmpeg(file, numPoints);
+      log('Waveform generated via FFmpeg (memory-efficient)', 'success');
+      return result;
+    } catch (error) {
+      log(`FFmpeg waveform failed: ${error.message}, trying Web Audio...`, 'warning');
+    }
+  }
+
+  // Fallback to Web Audio API
+  log('Generating waveform via Web Audio (higher memory usage)', 'warning');
   const arrayBuffer = await file.arrayBuffer();
   const audioContext = new (window.AudioContext || window.webkitAudioContext)();
 
@@ -218,7 +277,7 @@ export async function generateWaveformData(file, numPoints = 500) {
       let max = 0;
       for (let j = start; j < end && j < channelData.length; j++) {
         const abs = Math.abs(channelData[j]);
-        if (abs > max) max = abs;
+        if (abs > max) {max = abs;}
       }
       waveform.push(max);
     }
@@ -250,7 +309,7 @@ export function formatTime(seconds) {
  * Format file size
  */
 export function formatSize(bytes) {
-  if (bytes < 1024) return bytes + ' B';
-  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  if (bytes < 1024) {return bytes + ' B';}
+  if (bytes < 1024 * 1024) {return (bytes / 1024).toFixed(1) + ' KB';}
   return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
 }

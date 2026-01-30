@@ -1,0 +1,48 @@
+{
+  "compilerOptions": {
+    // Type checking JavaScript files via JSDoc
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+
+    // Module resolution
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+
+    // Relaxed type checking for existing JS codebase
+    // Enable strict gradually as code is typed
+    "strict": false,
+    "noImplicitAny": false,
+    "strictNullChecks": false,
+    "strictFunctionTypes": false,
+    "noImplicitReturns": false,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": false,
+    "useUnknownInCatchVariables": false,
+
+    // Path resolution
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"]
+    },
+
+    // Skip checking node_modules
+    "skipLibCheck": true,
+
+    // Allow synthetic default imports
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "resolveJsonModule": true
+  },
+  "include": ["src/**/*.js", "src/types.d.ts"],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "coverage",
+    "public",
+    "tests",
+    "src/main.js"
+  ]
+}

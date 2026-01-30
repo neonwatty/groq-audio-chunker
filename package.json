@@ -6,12 +6,39 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:ui": "vitest --ui",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "typecheck": "tsc --noEmit",
+    "knip": "knip",
+    "validate": "npm run lint && npm run typecheck && npm run test && npm run knip"
   },
-  "keywords": ["groq", "whisper", "audio", "transcription", "chunking"],
+  "keywords": [
+    "groq",
+    "whisper",
+    "audio",
+    "transcription",
+    "chunking"
+  ],
   "author": "",
   "license": "MIT",
+  "dependencies": {
+    "@ffmpeg/ffmpeg": "^0.12.10",
+    "@ffmpeg/util": "^0.12.1"
+  },
   "devDependencies": {
-    "vite": "^7.3.1"
+    "@eslint/js": "^9.18.0",
+    "@vitest/coverage-v8": "^4.0.18",
+    "eslint": "^9.18.0",
+    "globals": "^15.14.0",
+    "happy-dom": "^20.4.0",
+    "knip": "^5.42.0",
+    "typescript": "^5.7.3",
+    "vite": "^7.3.1",
+    "vitest": "^4.0.18"
   }
 }
