@@ -6,7 +6,7 @@
  */
 
 import { getFullCapabilityReport } from './capability-detector.js';
-import { getProcessingRecommendation, isDurationSafe } from './processing-recommendations.js';
+import { getProcessingRecommendation } from './processing-recommendations.js';
 
 /**
  * @typedef {Object} PreflightElements
@@ -260,35 +260,3 @@ export function resetPreflightRecommendation(elements) {
   elements.tips.hidden = true;
 }
 
-/**
- * Get cached capabilities
- * @returns {import('./capability-detector.js').CapabilityReport|null}
- */
-export function getCachedCapabilities() {
-  return cachedCapabilities;
-}
-
-/**
- * Check if duration is safe and return a user-friendly result
- * @param {number} durationSeconds - Audio duration in seconds
- * @returns {Promise<{safe: boolean, message: string}>}
- */
-export async function checkDurationSafety(durationSeconds) {
-  if (!cachedCapabilities) {
-    cachedCapabilities = await getFullCapabilityReport();
-  }
-
-  const result = await isDurationSafe(durationSeconds, cachedCapabilities);
-
-  if (result.safe) {
-    return {
-      safe: true,
-      message: 'Audio duration is within recommended limits for your device.',
-    };
-  }
-
-  return {
-    safe: false,
-    message: result.reason || 'Audio may be too long for your device.',
-  };
-}
