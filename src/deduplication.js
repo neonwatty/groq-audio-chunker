@@ -83,7 +83,7 @@ export function mergeTranscriptsWithDeduplication(results, overlapDurationSec = 
  * sometimes returns slightly out-of-order timestamps within a chunk. Instead,
  * we preserve the original word order within each chunk.
  */
-function deduplicateByTimestamp(words, overlapDurationSec) {
+function deduplicateByTimestamp(words, _overlapDurationSec) {
   // Step 1: Group words by chunk, preserving original order (do NOT sort!)
   const wordsByChunk = new Map();
   for (const word of words) {
@@ -101,7 +101,7 @@ function deduplicateByTimestamp(words, overlapDurationSec) {
 
   // Step 2: Identify overlap regions and determine authoritative chunk for each
   const overlapRegions = new Map(); // chunkIndex -> { overlapStart, cutoffIndex, nextChunkStartIndex }
-  let overlapRegionsProcessed = new Set();
+  const overlapRegionsProcessed = new Set();
 
   for (let i = 0; i < chunkIndices.length - 1; i++) {
     const chunkIndex = chunkIndices[i];
@@ -110,7 +110,7 @@ function deduplicateByTimestamp(words, overlapDurationSec) {
     const chunkWords = wordsByChunk.get(chunkIndex);
     const nextChunkWords = wordsByChunk.get(nextChunkIndex);
 
-    if (chunkWords.length === 0 || nextChunkWords.length === 0) continue;
+    if (chunkWords.length === 0 || nextChunkWords.length === 0) {continue;}
 
     // Find where timestamps overlap using the first/last word timestamps
     const thisChunkEnd = chunkWords[chunkWords.length - 1].absoluteEnd;
@@ -364,5 +364,5 @@ function tokenize(text) {
 }
 
 function normalizeWord(word) {
-  return word.toLowerCase().replace(/[.,!?;:'"()\[\]{}]/g, '');
+  return word.toLowerCase().replace(/[.,!?;:'"()[\]{}]/g, '');
 }

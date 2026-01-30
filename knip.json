@@ -1,0 +1,15 @@
+{
+  "$schema": "https://unpkg.com/knip@latest/schema.json",
+  "entry": ["src/main.js", "index.html"],
+  "project": ["src/**/*.js"],
+  "ignore": ["public/**", "tests/fixtures/**"],
+  "ignoreBinaries": [],
+  "vitest": {
+    "entry": ["tests/**/*.test.js"],
+    "project": ["tests/**/*.js"]
+  },
+  "ignoreExportsUsedInFile": true,
+  "rules": {
+    "duplicates": "off"
+  }
+}
