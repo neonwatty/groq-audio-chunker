@@ -1,0 +1,16 @@
+{
+  "files": [
+    {
+      "name": "Robots (3 min clip)",
+      "filename": "robots-3min.mp3",
+      "duration": "3:00",
+      "source": "YouTube (trimmed)"
+    },
+    {
+      "name": "The Robots Are Here And They're Also Depressed",
+      "filename": "The Robots Are Here And They're Also Depressed.mp3",
+      "duration": "11:32",
+      "source": "YouTube"
+    }
+  ]
+}
