@@ -25,6 +25,14 @@ import {
   isFFmpegLoaded,
   isSharedArrayBufferAvailable
 } from './ffmpeg-service.js';
+import {
+  createPreflightUI,
+  initializePreflight,
+  updatePreflightWithAudio,
+  showPreflight,
+  hidePreflight,
+  resetPreflightRecommendation
+} from './preflight-ui.js';
 
 // State
 let currentFile = null;
@@ -35,6 +43,9 @@ let allWordsRaw = null; // All words before deduplication
 let startTime = null;
 let timerInterval = null;
 let ffmpegLoadAttempted = false;
+
+// Pre-flight check UI elements
+let preflightElements = null;
 
 // Processing state management
 const processingState = {
@@ -156,6 +167,9 @@ function init() {
     log('For best performance, ensure COOP/COEP headers are set', 'info');
   }
 
+  // Initialize pre-flight check UI
+  initPreflightCheck();
+
   setupEventListeners();
   loadSavedSettings();
   loadApiKeyFromEnv();
@@ -163,6 +177,24 @@ function init() {
 
   // Start loading FFmpeg in background on page load
   ensureFFmpegLoaded();
+}
+
+/**
+ * Initialize the pre-flight device check UI
+ */
+async function initPreflightCheck() {
+  preflightElements = createPreflightUI();
+
+  // Insert pre-flight UI before the analysis section
+  const analysisSection = document.getElementById('analysisSection');
+  if (analysisSection) {
+    analysisSection.parentNode.insertBefore(preflightElements.container, analysisSection);
+  }
+
+  // Initialize device detection in background
+  initializePreflight(preflightElements).catch(err => {
+    log(`Pre-flight check initialization failed: ${err.message}`, 'warning');
+  });
 }
 
 /**
@@ -471,6 +503,20 @@ async function handleFileSelect(file) {
     elements.fileInfo.hidden = false;
     elements.uploadArea.hidden = true;
 
+    // Show pre-flight check and update with audio info
+    if (preflightElements) {
+      showPreflight(preflightElements);
+      const recommendation = await updatePreflightWithAudio(preflightElements, {
+        durationSeconds: duration,
+        fileSizeBytes: file.size,
+        mimeType: file.type,
+      });
+
+      if (recommendation && !recommendation.canProcess) {
+        log('Device may not be able to process this audio - see device check above', 'warning');
+      }
+    }
+
     // Show analysis section
     elements.analysisSection.hidden = false;
     elements.transcribeBtn.disabled = true;
@@ -508,6 +554,12 @@ function handleFileRemove() {
   elements.progressSection.hidden = true;
   elements.resultsSection.hidden = true;
   elements.audioFile.value = '';
+
+  // Hide and reset pre-flight UI
+  if (preflightElements) {
+    hidePreflight(preflightElements);
+    resetPreflightRecommendation(preflightElements);
+  }
 
   log('File removed');
 }
