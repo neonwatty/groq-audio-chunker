@@ -33,6 +33,11 @@ import {
   hidePreflight,
   resetPreflightRecommendation
 } from './preflight-ui.js';
+import {
+  checkDeviceGate,
+  checkDurationLimit,
+  showDurationWarning
+} from './device-gate.js';
 
 // State
 let currentFile = null;
@@ -46,6 +51,10 @@ let ffmpegLoadAttempted = false;
 
 // Pre-flight check UI elements
 let preflightElements = null;
+
+// Device capabilities (populated on init)
+let deviceCapabilities = null;
+let maxDurationMinutes = null;
 
 // Processing state management
 const processingState = {
@@ -158,13 +167,23 @@ const elements = {
 };
 
 // Initialize
-function init() {
+async function init() {
   log('Groq Audio Chunker initialized (with overlap + deduplication)');
 
   // Check SharedArrayBuffer availability
   if (!isSharedArrayBufferAvailable()) {
     log('SharedArrayBuffer not available - FFmpeg will use fallback mode', 'warning');
     log('For best performance, ensure COOP/COEP headers are set', 'info');
+  }
+
+  // Check device gate (shows mobile warning if needed)
+  try {
+    const gateResult = await checkDeviceGate();
+    deviceCapabilities = gateResult.capabilities;
+    maxDurationMinutes = gateResult.maxDuration;
+    log(`Device: ${deviceCapabilities.deviceType} (${deviceCapabilities.memoryGB}GB RAM) - Max duration: ${maxDurationMinutes} min`);
+  } catch (error) {
+    log(`Device detection failed: ${error.message}`, 'warning');
   }
 
   // Initialize pre-flight check UI
@@ -497,6 +516,28 @@ async function handleFileSelect(file) {
   try {
     const duration = await getAudioDuration(file);
     log(`Audio duration: ${formatTime(duration)}`);
+
+    // Check duration limit
+    if (deviceCapabilities) {
+      const durationCheck = checkDurationLimit(duration, deviceCapabilities);
+      if (!durationCheck.allowed) {
+        log(`Audio exceeds recommended duration (${Math.round(durationCheck.audioMinutes)} min > ${durationCheck.maxMinutes} min limit)`, 'warning');
+
+        const shouldProceed = await showDurationWarning(
+          durationCheck.audioMinutes,
+          durationCheck.maxMinutes,
+          deviceCapabilities.deviceType
+        );
+
+        if (!shouldProceed) {
+          log('File selection cancelled due to duration limit', 'info');
+          currentFile = null;
+          return;
+        }
+
+        log('User chose to proceed despite duration warning', 'info');
+      }
+    }
 
     elements.fileName.textContent = file.name;
     elements.fileMeta.textContent = `${formatSize(file.size)} • ${formatTime(duration)}`;
